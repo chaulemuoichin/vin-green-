@@ -1,0 +1,28 @@
+{
+  "meta": {"name": "openaq-api"},
+  "results": [
+    {
+      "id": 101,
+      "name": "Hanoi demo station",
+      "coordinates": {"latitude": 21.0638, "longitude": 105.7607},
+      "sensors": [
+        {
+          "id": 501,
+          "parameter": {"name": "pm25"},
+          "latest": {
+            "value": 58.4,
+            "datetime": {"utc": "2026-05-11T01:00:00Z"}
+          }
+        },
+        {
+          "id": 502,
+          "parameter": {"name": "no2"},
+          "latest": {
+            "value": 105.2,
+            "datetime": {"utc": "2026-05-11T01:00:00Z"}
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,8 @@
+corridor_id,name,district,lat,lon,pm25_index,no2_index,congestion_default
+ring3_pham_van_dong,Vành đai 3 - Phạm Văn Đồng,Bắc Từ Liêm,21.0648,105.7716,8.5,15.0,0.82
+nhat_tan_bridge,Cầu Nhật Tân - Võ Chí Công,Tây Hồ,21.0815,105.8164,5.0,9.0,0.55
+chuong_duong_bridge,Cầu Chương Dương,Hoàn Kiếm,21.0341,105.8613,6.2,11.5,0.64
+nguyen_trai,Nguyễn Trãi - Khuất Duy Tiến,Thanh Xuân,20.9913,105.8007,8.0,16.0,0.86
+giai_phong,Giải Phóng - Ngọc Hồi,Hoàng Mai,20.9625,105.8419,7.2,14.0,0.78
+long_bien_logistics,Logistics Long Biên,Long Biên,21.0397,105.8993,6.8,13.0,0.72
+thanh_tri_bridge,Cầu Thanh Trì,Thanh Trì,20.9898,105.9028,7.8,14.8,0.80

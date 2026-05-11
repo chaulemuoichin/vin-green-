@@ -1,0 +1,13 @@
+district_id,name,lat,lon,population,area_km2,urban_level
+ba_dinh,Ba Đình,21.0369,105.8347,221900,9.2,urban
+hoan_kiem,Hoàn Kiếm,21.0288,105.8522,135600,5.3,urban
+tay_ho,Tây Hồ,21.0682,105.8236,160500,24.0,urban
+long_bien,Long Biên,21.0449,105.8901,337900,60.4,urban
+cau_giay,Cầu Giấy,21.0362,105.7906,292500,12.3,urban
+dong_da,Đống Đa,21.0181,105.8295,376800,9.9,urban
+hai_ba_trung,Hai Bà Trưng,21.0069,105.8577,303600,10.1,urban
+hoang_mai,Hoàng Mai,20.9749,105.8677,540000,41.0,urban
+thanh_xuan,Thanh Xuân,20.9938,105.8025,286700,9.1,urban
+nam_tu_liem,Nam Từ Liêm,21.0128,105.7604,264200,32.2,urban
+bac_tu_liem,Bắc Từ Liêm,21.0636,105.7608,340600,45.2,urban
+ha_dong,Hà Đông,20.9712,105.7788,397800,49.6,urban

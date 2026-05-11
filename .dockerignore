@@ -1,0 +1,57 @@
+# Version control
+.git
+.gitignore
+.github
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info
+dist
+build
+.eggs
+*.egg
+.venv
+venv
+env
+
+# IDEs
+.vscode
+.idea
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Testing
+.pytest_cache
+.coverage
+htmlcov
+.tox
+
+# Type checking
+.mypy_cache
+.dmypy.json
+dmypy.json
+
+# Pre-commit
+.pre-commit-config.yaml
+
+# Project-specific
+data/raw/
+data/processed/
+.cache
+notebooks/
+tests/
+*.ipynb
+.env
+.env.local
+*.log
+
+# Docker-specific (don't double-nest)
+Dockerfile
+docker-compose.yml
+.dockerignore

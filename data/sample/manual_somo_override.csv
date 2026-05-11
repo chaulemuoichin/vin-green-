@@ -1,0 +1,2 @@
+timestamp,station_id,pollutant,concentration,aqi,quality_flag,note
+2026-05-11T07:00:00+07:00,somo_minh_khai,pm25,51.0,139,manual_validated,Validated against SOMO public page snapshot

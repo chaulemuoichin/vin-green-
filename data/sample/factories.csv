@@ -1,0 +1,5 @@
+source_id,name,lat,lon,district,height_m,pm25_g_s,no2_g_s,status
+pvd_industrial,Cụm phát thải Phạm Văn Đồng,21.0706,105.7819,Bắc Từ Liêm,35,1.4,3.0,active
+thach_ban_industrial,Cụm công nghiệp Thạch Bàn,21.0257,105.9143,Long Biên,42,1.8,4.4,active
+minh_khai_stack,Nguồn Minh Khai - Vĩnh Tuy,20.9991,105.8751,Hai Bà Trưng,30,1.2,3.8,active
+thanh_tri_cluster,Cụm phát thải Thanh Trì,20.9190,105.8465,Thanh Trì,38,1.5,3.6,active

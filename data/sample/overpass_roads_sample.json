@@ -1,0 +1,22 @@
+{
+  "elements": [
+    {
+      "type": "way",
+      "id": 1,
+      "tags": {"highway": "primary"},
+      "geometry": [
+        {"lat": 21.0600, "lon": 105.7600},
+        {"lat": 21.0700, "lon": 105.7700}
+      ]
+    },
+    {
+      "type": "way",
+      "id": 2,
+      "tags": {"highway": "secondary"},
+      "geometry": [
+        {"lat": 21.0300, "lon": 105.8500},
+        {"lat": 21.0340, "lon": 105.8600}
+      ]
+    }
+  ]
+}

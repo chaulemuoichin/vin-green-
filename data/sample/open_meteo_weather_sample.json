@@ -1,0 +1,16 @@
+{
+  "latitude": 21.0278,
+  "longitude": 105.8342,
+  "hourly": {
+    "time": [
+      "2026-05-11T08:00",
+      "2026-05-11T09:00"
+    ],
+    "temperature_2m": [29.1, 30.0],
+    "relative_humidity_2m": [68, 65],
+    "precipitation": [0.0, 0.1],
+    "wind_speed_10m": [2.4, 2.7],
+    "wind_direction_10m": [180, 170],
+    "boundary_layer_height": [620, 740]
+  }
+}

@@ -1,0 +1,17 @@
+timestamp,source,station_id,station_name,lat,lon,district,pollutant,concentration,aqi,quality_flag
+2026-05-11T07:00:00+07:00,AQICN,aqicn_tay_ho,Tây Hồ station,21.0680,105.8230,Tây Hồ,pm25,42.0,117,ok
+2026-05-11T07:00:00+07:00,AQICN,aqicn_tay_ho,Tây Hồ station,21.0680,105.8230,Tây Hồ,no2,72.0,77,ok
+2026-05-11T07:00:00+07:00,AQICN,aqicn_hoan_kiem,Hoàn Kiếm station,21.0287,105.8522,Hoàn Kiếm,pm25,38.0,107,ok
+2026-05-11T07:00:00+07:00,AQICN,aqicn_hoan_kiem,Hoàn Kiếm station,21.0287,105.8522,Hoàn Kiếm,no2,88.0,90,ok
+2026-05-11T07:00:00+07:00,SOMO,somo_minh_khai,Minh Khai station,20.9964,105.8610,Hai Bà Trưng,pm25,51.0,139,ok
+2026-05-11T07:00:00+07:00,SOMO,somo_minh_khai,Minh Khai station,20.9964,105.8610,Hai Bà Trưng,no2,122.0,112,ok
+2026-05-11T07:00:00+07:00,AQICN,aqicn_cau_giay,Cầu Giấy station,21.0361,105.7908,Cầu Giấy,pm25,47.0,129,ok
+2026-05-11T07:00:00+07:00,AQICN,aqicn_cau_giay,Cầu Giấy station,21.0361,105.7908,Cầu Giấy,no2,96.0,97,ok
+2026-05-11T07:00:00+07:00,AQICN,aqicn_long_bien,Long Biên station,21.0450,105.8900,Long Biên,pm25,57.0,152,ok
+2026-05-11T07:00:00+07:00,AQICN,aqicn_long_bien,Long Biên station,21.0450,105.8900,Long Biên,no2,108.0,105,ok
+2026-05-11T07:00:00+07:00,SOMO,somo_ha_dong,Hà Đông station,20.9712,105.7787,Hà Đông,pm25,49.0,134,ok
+2026-05-11T07:00:00+07:00,SOMO,somo_ha_dong,Hà Đông station,20.9712,105.7787,Hà Đông,no2,82.0,85,ok
+2026-05-11T07:00:00+07:00,AQI_IN,aqiin_bac_tu_liem,Bắc Từ Liêm station,21.0638,105.7607,Bắc Từ Liêm,pm25,62.0,154,ok
+2026-05-11T07:00:00+07:00,AQI_IN,aqiin_bac_tu_liem,Bắc Từ Liêm station,21.0638,105.7607,Bắc Từ Liêm,no2,101.0,101,ok
+2026-05-11T07:00:00+07:00,AQICN,aqicn_thanh_xuan,Thanh Xuân station,20.9939,105.8023,Thanh Xuân,pm25,54.0,147,ok
+2026-05-11T07:00:00+07:00,AQICN,aqicn_thanh_xuan,Thanh Xuân station,20.9939,105.8023,Thanh Xuân,no2,132.0,116,ok
