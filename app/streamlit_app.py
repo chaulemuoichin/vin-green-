@@ -17,7 +17,7 @@ from hanoi_air.viz import aqi_color, build_folium_map
 init_sentry(service="dashboard")
 
 st.set_page_config(
-    page_title="Hanoi Air Forecast",
+    page_title="Northern Vietnam Air Forecast",
     page_icon="🌫️",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -309,8 +309,8 @@ title_col, badge_col = st.columns([5, 1])
 with title_col:
     st.markdown(
         f'<h1 style="margin:0;font-size:1.45rem;font-weight:700;color:#f1f5f9;letter-spacing:-0.02em">'
-        f'Hà Nội — Dự báo chất lượng không khí 24h</h1>'
-        f'<div style="color:#475569;font-size:.78rem;margin-top:3px">Cập nhật mỗi 30 phút · {bundle.get("generated_at","")[:16].replace("T"," ")} UTC</div>',
+        f'Miền Bắc Việt Nam — Dự báo chất lượng không khí 24h</h1>'
+        f'<div style="color:#475569;font-size:.78rem;margin-top:3px">Hà Nội (12 quận) + các tỉnh lân cận · Cập nhật mỗi 30 phút · {bundle.get("generated_at","")[:16].replace("T"," ")} UTC</div>',
         unsafe_allow_html=True,
     )
 with badge_col:

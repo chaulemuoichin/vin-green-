@@ -12,6 +12,8 @@ from .dispersion import plume_contribution
 from .geography import load_districts
 from .ingestion import (
     fetch_open_meteo_air_forecast,
+    fetch_regional_cities_aqi,
+    fetch_regional_wind_grid,
     load_air_readings,
     load_sources,
     load_traffic,
@@ -41,6 +43,8 @@ def build_forecast(
     )
     sources = load_sources(settings)
     traffic = load_traffic(settings)
+    wind_grid = fetch_regional_wind_grid(settings, now) if live_enabled else []
+    regional_cities = fetch_regional_cities_aqi(settings, now) if live_enabled else []
 
     pm25_current = _interpolated_current(readings, districts, "pm25", default=38.0)
     no2_current = _interpolated_current(readings, districts, "no2", default=70.0)
@@ -133,6 +137,8 @@ def build_forecast(
         "forecasts": forecast_rows,
         "alerts": [alert.to_dict() for alert in alerts],
         "sources": [source.to_dict() for source in sources],
+        "wind_grid": wind_grid,
+        "regional_cities": regional_cities,
         "source_registry": registry_as_dict(),
         "source_status": load_source_status(settings),
         "input_quality": _quality_summary(readings, air_background_rows),

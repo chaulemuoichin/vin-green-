@@ -11,7 +11,7 @@ from datetime import datetime, timedelta, timezone
 from html import unescape
 from pathlib import Path
 
-from .air_quality import combined_aqi
+from .air_quality import aqi_category, combined_aqi
 from .archive import (
     append_processed_readings,
     archive_raw_payload,
@@ -28,6 +28,44 @@ from .schemas import AirQualityForecast, AirReading, District, SourceEmission, W
 from .sources import mark_source_status, should_fetch_source, source_config
 
 logger = get_logger(__name__)
+
+# ── Northern Vietnam regional wind grid ───────────────────────────────────────
+# Coarse grid: ~65km spacing, covers all of northern Vietnam (zoom < 10)
+# Coarse: ~65km spacing, all northern Vietnam (zoom < 10)
+_NORTHERN_VIETNAM_WIND_GRID_REGIONAL: list[dict] = [
+    {"lat": lat, "lon": lon, "grid_level": "regional"}
+    for lat in [19.8, 20.4, 21.0, 21.6, 22.2, 22.8]
+    for lon in [103.0, 103.7, 104.4, 105.1, 105.8, 106.5, 107.2]
+]
+
+# Medium: ~17km spacing, Hanoi + ~60km radius (zoom 10–11)
+_NORTHERN_VIETNAM_WIND_GRID_CITY_MEDIUM: list[dict] = [
+    {"lat": lat, "lon": lon, "grid_level": "medium"}
+    for lat in [20.60, 20.75, 20.90, 21.05, 21.20, 21.35]
+    for lon in [105.45, 105.60, 105.75, 105.90, 106.05, 106.20]
+]
+
+# Fine: ~4.5km spacing, core Hanoi 12 districts (zoom >= 12)
+_NORTHERN_VIETNAM_WIND_GRID_CITY_FINE: list[dict] = [
+    {"lat": lat, "lon": lon, "grid_level": "fine"}
+    for lat in [20.84, 20.88, 20.92, 20.96, 21.00, 21.04, 21.08, 21.12]
+    for lon in [105.72, 105.76, 105.80, 105.84, 105.88, 105.92, 105.96]
+]
+
+NORTHERN_VIETNAM_CITIES: list[dict] = [
+    {"name": "Hải Phòng", "lat": 20.865, "lon": 106.683},
+    {"name": "Nam Định", "lat": 20.420, "lon": 106.170},
+    {"name": "Thái Nguyên", "lat": 21.590, "lon": 105.850},
+    {"name": "Bắc Giang", "lat": 21.272, "lon": 106.194},
+    {"name": "Vĩnh Phúc", "lat": 21.300, "lon": 105.600},
+    {"name": "Hòa Bình", "lat": 20.813, "lon": 105.338},
+    {"name": "Hà Nam", "lat": 20.550, "lon": 105.910},
+    {"name": "Ninh Bình", "lat": 20.253, "lon": 105.975},
+    {"name": "Lạng Sơn", "lat": 21.853, "lon": 106.761},
+    {"name": "Quảng Ninh", "lat": 20.950, "lon": 107.085},
+    {"name": "Yên Bái", "lat": 21.722, "lon": 104.906},
+    {"name": "Lào Cai", "lat": 22.480, "lon": 103.975},
+]
 
 
 def parse_datetime(value: str | None) -> datetime:
@@ -993,6 +1031,162 @@ def _google_corridor_congestion(row: dict, api_key: str) -> float | None:
     except Exception as exc:
         logger.debug("google distance matrix corridor failed: {exc}", exc=exc)
         return None
+
+
+def build_open_meteo_weather_url_multi(
+    lats: list[float], lons: list[float], horizon_hours: int = 24
+) -> str:
+    params = urllib.parse.urlencode(
+        {
+            "latitude": ",".join(f"{lat:.5f}" for lat in lats),
+            "longitude": ",".join(f"{lon:.5f}" for lon in lons),
+            "hourly": "wind_speed_10m,wind_direction_10m",
+            "forecast_hours": horizon_hours,
+            "timezone": "Asia/Bangkok",
+            "wind_speed_unit": "ms",
+        },
+        safe=",",
+    )
+    return f"https://api.open-meteo.com/v1/forecast?{params}"
+
+
+def parse_regional_wind_payload(
+    payload: object,
+    grid_points: list[dict],
+    horizon_hours: int = 24,
+) -> list[dict]:
+    payloads: list[object] = payload if isinstance(payload, list) else [payload]
+    rows: list[dict] = []
+    for point, point_payload in zip(grid_points, payloads, strict=False):
+        if not isinstance(point_payload, dict):
+            continue
+        hourly = point_payload.get("hourly") or {}
+        speeds = hourly.get("wind_speed_10m") or []
+        directions = hourly.get("wind_direction_10m") or []
+        for idx in range(min(horizon_hours, len(speeds), len(directions))):
+            try:
+                rows.append(
+                    {
+                        "lat": point["lat"],
+                        "lon": point["lon"],
+                        "grid_level": str(point.get("grid_level", "regional")),
+                        "hour_offset": idx,
+                        "wind_speed_mps": float(speeds[idx]),
+                        "wind_dir_deg": float(directions[idx]),
+                    }
+                )
+            except (TypeError, ValueError):
+                continue
+    return rows
+
+
+def fetch_regional_wind_grid(
+    settings: Settings | None = None,
+    now: datetime | None = None,
+) -> list[dict]:
+    settings = settings or get_settings()
+    from .cache import load_cache, save_cache
+
+    cached = load_cache("regional_wind_grid_v3", settings)
+    if cached:
+        return cached.get("points", [])
+    rows: list[dict] = []
+    # Call 1: coarse regional (42 pts)
+    reg_pts = _NORTHERN_VIETNAM_WIND_GRID_REGIONAL
+    try:
+        url = build_open_meteo_weather_url_multi(
+            [p["lat"] for p in reg_pts],
+            [p["lon"] for p in reg_pts],
+            settings.forecast_horizon_hours,
+        )
+        rows.extend(parse_regional_wind_payload(
+            _http_json(url, timeout=25.0), reg_pts, settings.forecast_horizon_hours
+        ))
+    except Exception as exc:
+        logger.warning("regional wind grid (regional) fetch failed: {exc}", exc=exc)
+    # Call 2: city medium (36 pts) + fine (56 pts) = 92 pts total
+    city_pts = _NORTHERN_VIETNAM_WIND_GRID_CITY_MEDIUM + _NORTHERN_VIETNAM_WIND_GRID_CITY_FINE
+    try:
+        url = build_open_meteo_weather_url_multi(
+            [p["lat"] for p in city_pts],
+            [p["lon"] for p in city_pts],
+            settings.forecast_horizon_hours,
+        )
+        rows.extend(parse_regional_wind_payload(
+            _http_json(url, timeout=25.0), city_pts, settings.forecast_horizon_hours
+        ))
+    except Exception as exc:
+        logger.warning("regional wind grid (city) fetch failed: {exc}", exc=exc)
+    if rows:
+        save_cache({"points": rows}, "regional_wind_grid_v3", settings, ttl_seconds=1800)
+        logger.info("regional_wind fetched {n} grid-point-hours total", n=len(rows))
+        return rows
+    return []
+
+
+def fetch_regional_cities_aqi(
+    settings: Settings | None = None,
+    now: datetime | None = None,
+) -> list[dict]:
+    settings = settings or get_settings()
+    from .cache import load_cache, save_cache
+
+    cached = load_cache("regional_cities_aqi", settings)
+    if cached:
+        return cached.get("cities", [])
+    latitudes = ",".join(f"{c['lat']:.5f}" for c in NORTHERN_VIETNAM_CITIES)
+    longitudes = ",".join(f"{c['lon']:.5f}" for c in NORTHERN_VIETNAM_CITIES)
+    params = urllib.parse.urlencode(
+        {
+            "latitude": latitudes,
+            "longitude": longitudes,
+            "hourly": "pm2_5,nitrogen_dioxide",
+            "forecast_hours": settings.forecast_horizon_hours,
+            "timezone": "Asia/Bangkok",
+            "domains": "auto",
+        },
+        safe=",",
+    )
+    url = f"https://air-quality-api.open-meteo.com/v1/air-quality?{params}"
+    try:
+        payload = _http_json(url, timeout=25.0)
+        payloads: list[object] = payload if isinstance(payload, list) else [payload]
+        cities: list[dict] = []
+        for city, city_payload in zip(NORTHERN_VIETNAM_CITIES, payloads, strict=False):
+            if not isinstance(city_payload, dict):
+                continue
+            hourly = city_payload.get("hourly") or {}
+            pm25_list = hourly.get("pm2_5") or []
+            no2_list = hourly.get("nitrogen_dioxide") or []
+            for idx in range(min(settings.forecast_horizon_hours, len(pm25_list))):
+                try:
+                    pm25 = float(pm25_list[idx]) if pm25_list[idx] is not None else 0.0
+                    no2_val = no2_list[idx] if idx < len(no2_list) else None
+                    no2 = float(no2_val) if no2_val is not None else 0.0
+                    aqi = combined_aqi(pm25=pm25, no2=no2)
+                    cities.append(
+                        {
+                            "name": city["name"],
+                            "lat": city["lat"],
+                            "lon": city["lon"],
+                            "hour_offset": idx,
+                            "pm25": round(pm25, 1),
+                            "no2": round(no2, 1),
+                            "aqi": aqi,
+                            "category": aqi_category(aqi),
+                        }
+                    )
+                except (TypeError, ValueError):
+                    continue
+        if cities:
+            save_cache({"cities": cities}, "regional_cities_aqi", settings, ttl_seconds=1800)
+            logger.info("regional_cities_aqi fetched {n} city-hours", n=len(cities))
+            return cities
+    except Exception as exc:
+        logger.warning("regional cities AQI fetch failed: {exc}", exc=exc)
+    if cached:
+        return cached.get("cities", [])
+    return []
 
 
 def load_json(path: Path) -> dict:

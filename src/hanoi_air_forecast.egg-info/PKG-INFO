@@ -1,0 +1,34 @@
+Metadata-Version: 2.4
+Name: hanoi-air-forecast
+Version: 0.2.0
+Summary: Hybrid live/demo Hanoi 24h air pollution forecast and downwind alert system
+Requires-Python: >=3.10
+Requires-Dist: numpy>=1.24
+Requires-Dist: pandas>=2.0
+Requires-Dist: fastapi>=0.110
+Requires-Dist: uvicorn>=0.27
+Requires-Dist: streamlit>=1.34
+Requires-Dist: streamlit-folium>=0.20
+Requires-Dist: folium>=0.16
+Requires-Dist: plotly>=5.20
+Requires-Dist: celery>=5.3
+Requires-Dist: redis>=5.0
+Requires-Dist: torch>=2.2
+Requires-Dist: metpy>=1.6
+Requires-Dist: xarray>=2024.1
+Requires-Dist: netCDF4>=1.6
+Requires-Dist: pytest>=8.0
+Requires-Dist: httpx>=0.27
+Requires-Dist: loguru>=0.7
+Requires-Dist: tenacity>=8.2
+Requires-Dist: filelock>=3.13
+Requires-Dist: pydantic>=2.5
+Requires-Dist: pydantic-settings>=2.0
+Requires-Dist: sentry-sdk[celery,fastapi]>=2.0
+Provides-Extra: dev
+Requires-Dist: ruff>=0.5; extra == "dev"
+Requires-Dist: black>=24.0; extra == "dev"
+Requires-Dist: mypy>=1.10; extra == "dev"
+Requires-Dist: pre-commit>=3.7; extra == "dev"
+Requires-Dist: pytest-cov>=5.0; extra == "dev"
+Requires-Dist: types-requests; extra == "dev"
