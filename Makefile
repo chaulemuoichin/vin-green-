@@ -1,4 +1,4 @@
-.PHONY: help dev up down logs test lint format type-check build clean
+.PHONY: help dev up down logs test lint format type-check build clean prod-up prod-down prod-logs prod-build e2e backtest
 
 help:
 	@echo "Hanoi Air Forecast — Development Makefile"
@@ -19,9 +19,17 @@ help:
 	@echo "  make type-check       - Run mypy strict type checking"
 	@echo "  make quality          - Run lint + format + type-check all together"
 	@echo ""
-	@echo "Docker:"
+	@echo "Docker (dev):"
 	@echo "  make build            - Build Docker image"
 	@echo "  make build-no-cache   - Build Docker image without cache"
+	@echo ""
+	@echo "Docker (prod):"
+	@echo "  make prod-up          - Start production stack (nginx + api + worker + dashboard + redis)"
+	@echo "  make prod-down        - Stop production stack"
+	@echo "  make prod-logs        - Tail all production logs"
+	@echo "  make prod-build       - Rebuild production image (hanoi_air:0.3.0)"
+	@echo "  make e2e              - Run end-to-end tests against the running stack"
+	@echo "  make backtest         - Run scripts/run_backtest.py against archived readings"
 	@echo ""
 	@echo "Cleanup:"
 	@echo "  make clean            - Remove Docker containers and volumes"
@@ -126,6 +134,39 @@ clean-all: clean
 	@echo "Removing Docker images..."
 	docker rmi vin_startup_api vin_startup_worker vin_startup_dashboard 2>nul || true
 	@echo "✓ Fully cleaned"
+
+# Production stack (docker-compose.prod.yml)
+prod-up:
+	@echo "Starting Hanoi Air Forecast production stack..."
+	@if not exist .env (echo ".env file not found. Copy .env.example and fill in keys." & exit /b 1)
+	docker-compose -f docker-compose.prod.yml up -d
+	@echo ""
+	@echo "Production stack starting. Healthchecks take ~30s."
+	@echo "  - Single entrypoint:    http://localhost/"
+	@echo "  - API:                  http://localhost/api/forecast?district=hoan_kiem&hours=24"
+	@echo "  - API docs:             http://localhost/docs"
+	@echo "  - Dashboard:            http://localhost/"
+	@echo ""
+	@echo "Direct ports also exposed for debugging:"
+	@echo "  - API:                  http://localhost:8000  (via docker-compose only if added)"
+	@echo "  - Dashboard:            http://localhost:8501  (via docker-compose only if added)"
+	@echo ""
+
+prod-down:
+	docker-compose -f docker-compose.prod.yml down
+
+prod-logs:
+	docker-compose -f docker-compose.prod.yml logs -f
+
+prod-build:
+	docker-compose -f docker-compose.prod.yml build
+
+e2e:
+	@echo "Running end-to-end tests against http://localhost..."
+	set E2E=1&& set API_BASE=http://localhost&& python -m pytest tests/test_e2e.py -v
+
+backtest:
+	python scripts/run_backtest.py --days 7
 
 # Helper targets
 ps:

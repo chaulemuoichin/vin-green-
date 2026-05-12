@@ -15,3 +15,9 @@ timestamp,source,station_id,station_name,lat,lon,district,pollutant,concentratio
 2026-05-11T07:00:00+07:00,AQI_IN,aqiin_bac_tu_liem,Bắc Từ Liêm station,21.0638,105.7607,Bắc Từ Liêm,no2,101.0,101,ok
 2026-05-11T07:00:00+07:00,AQICN,aqicn_thanh_xuan,Thanh Xuân station,20.9939,105.8023,Thanh Xuân,pm25,54.0,147,ok
 2026-05-11T07:00:00+07:00,AQICN,aqicn_thanh_xuan,Thanh Xuân station,20.9939,105.8023,Thanh Xuân,no2,132.0,116,ok
+2026-05-11T07:00:00+07:00,SOMO,somo_hoai_duc,Hoài Đức station,21.0305,105.7068,Hoài Đức,pm25,44.0,123,ok
+2026-05-11T07:00:00+07:00,SOMO,somo_hoai_duc,Hoài Đức station,21.0305,105.7068,Hoài Đức,no2,68.0,73,ok
+2026-05-11T07:00:00+07:00,SOMO,somo_thach_that,Thạch Thất station,21.0791,105.5718,Thạch Thất,pm25,52.0,141,ok
+2026-05-11T07:00:00+07:00,SOMO,somo_thach_that,Thạch Thất station,21.0791,105.5718,Thạch Thất,no2,58.0,65,ok
+2026-05-11T07:00:00+07:00,SOMO,somo_son_tay,Sơn Tây station,21.1369,105.4972,Sơn Tây,pm25,38.0,107,ok
+2026-05-11T07:00:00+07:00,SOMO,somo_son_tay,Sơn Tây station,21.1369,105.4972,Sơn Tây,no2,46.0,49,ok

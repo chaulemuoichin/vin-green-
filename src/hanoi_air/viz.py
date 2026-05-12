@@ -105,7 +105,23 @@ def _interpolated_heatmap_points(
     return heat_points
 
 
-def build_folium_map(bundle: dict, hour_offset: int = 0, selected_district: str | None = None):
+def _downwind_color_for_score(score: float) -> str:
+    """Pick a wedge fill color from a plasma-ish ramp."""
+    if score >= 0.55:
+        return "#ef4444"  # high
+    if score >= 0.30:
+        return "#f97316"  # medium
+    if score >= 0.10:
+        return "#eab308"  # low
+    return "#a78bfa"  # marginal
+
+
+def build_folium_map(
+    bundle: dict,
+    hour_offset: int = 0,
+    selected_district: str | None = None,
+    show_downwind: bool = True,
+):
     try:
         import folium  # type: ignore
         from folium.plugins import HeatMap  # type: ignore
@@ -239,6 +255,38 @@ def build_folium_map(bundle: dict, hour_offset: int = 0, selected_district: str 
             icon=folium.Icon(color="darkred", icon="industry", prefix="fa"),
         ).add_to(source_layer)
     source_layer.add_to(fmap)
+
+    # ── Layer 6: Downwind wedges (per source, fill by max score) ──────────
+    if show_downwind:
+        zones_by_hour = bundle.get("downwind_zones") or {}
+        hour_zones = zones_by_hour.get(str(hour_offset)) or zones_by_hour.get(hour_offset) or []
+        downwind_layer = folium.FeatureGroup(name="Vùng xuôi gió", show=True)
+        for zone in hour_zones:
+            polygon = zone.get("polygon") or []
+            if len(polygon) < 3:
+                continue
+            score = float(zone.get("max_score", 0.0))
+            color = _downwind_color_for_score(score)
+            opacity = max(0.18, min(0.45, 0.15 + score * 0.45))
+            affected_names = [d["district_name"] for d in zone.get("affected_districts", [])][:4]
+            popup_html = (
+                f"<b>{zone['source_name']}</b><br>"
+                f"Gió {zone.get('wind_dir_deg', '-')}° · "
+                f"{zone.get('wind_speed_mps', '-')} m/s<br>"
+                f"Vùng ảnh hưởng: <b>{', '.join(affected_names) or '—'}</b><br>"
+                f"Điểm cao nhất: <b>{score:.2f}</b>"
+            )
+            folium.Polygon(
+                locations=polygon,
+                color=color,
+                weight=1.5,
+                fill=True,
+                fill_color=color,
+                fill_opacity=opacity,
+                popup=folium.Popup(popup_html, max_width=320),
+                tooltip=f"Xuôi gió từ {zone['source_name']}",
+            ).add_to(downwind_layer)
+        downwind_layer.add_to(fmap)
 
     folium.LayerControl(collapsed=False).add_to(fmap)
     return fmap

@@ -66,6 +66,23 @@ class Settings(BaseSettings):
         default="http://localhost:8501,http://localhost:8000,http://localhost:3000",
         description="Comma-separated CORS allowed origins",
     )
+    rate_limit_forecast: str = Field(
+        default="60/minute",
+        description="slowapi-format limit string for GET /forecast",
+    )
+    rate_limit_alerts: str = Field(
+        default="30/minute",
+        description="slowapi-format limit string for GET /alerts",
+    )
+    jwt_secret: str | None = Field(
+        default=None, repr=False,
+        description="Symmetric secret for HS256 JWTs. When unset, the /auth/token route returns 503.",
+    )
+    jwt_ttl_minutes: int = Field(
+        default=60, ge=1, le=1440,
+        description="Lifetime in minutes for JWTs minted by /auth/token.",
+    )
+    jwt_issuer: str = Field(default="hanoi-air-forecast", description="JWT iss claim.")
     forecast_horizon_hours: int = Field(default=24, ge=1, le=72)
     cache_ttl_seconds: int = Field(default=1800, ge=60)
     alert_aqi_threshold: int = Field(default=150, ge=0, le=500)

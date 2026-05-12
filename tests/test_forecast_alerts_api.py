@@ -6,17 +6,20 @@ from hanoi_air.config import get_settings
 from hanoi_air.forecast import build_forecast, top_n_worst
 
 
-def test_forecast_bundle_has_24h_for_12_districts():
+def test_forecast_bundle_has_24h_for_15_districts():
     settings = get_settings()
     bundle = build_forecast(
         settings, now=datetime(2026, 5, 11, tzinfo=timezone.utc), use_live=False
     )
     assert bundle["mode"] == "sample"
-    assert bundle["district_count"] == 12
-    assert len(bundle["forecasts"]) == 12 * 24
+    assert bundle["district_count"] == 15
+    assert len(bundle["forecasts"]) == 15 * 24
     sample = bundle["forecasts"][0]
     assert {"uncertainty_low", "uncertainty_high", "health_text"} <= set(sample)
     assert sample["uncertainty_low"] <= sample["aqi"] <= sample["uncertainty_high"]
+    # Day 1 additions must thread through the pipeline
+    assert {"vn_aqi", "vn_category", "source_breakdown"} <= set(sample)
+    assert abs(sum(sample["source_breakdown"].values()) - 1.0) < 1e-3
 
 
 def test_alert_threshold_edges_for_aqi():
@@ -55,6 +58,6 @@ def test_fastapi_smoke():
     client = TestClient(app)
     assert client.get("/health").json()["status"] == "ok"
     districts = client.get("/districts").json()["districts"]
-    assert len(districts) == 12
+    assert len(districts) == 15
     forecast = client.get("/forecast?use_live=false&force_refresh=true&hour_offset=0").json()
-    assert len(forecast["forecasts"]) == 12
+    assert len(forecast["forecasts"]) == 15

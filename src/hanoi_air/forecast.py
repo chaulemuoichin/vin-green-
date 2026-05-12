@@ -4,11 +4,15 @@ import math
 from collections.abc import Iterable
 from datetime import datetime, timedelta, timezone
 
+from .actions import recommendations
 from .air_quality import aqi_category, combined_aqi, health_recommendation
 from .alerts import generate_alerts
 from .cache import load_cache, save_cache
 from .config import Settings, get_settings
 from .dispersion import plume_contribution
+from .downwind import compute_downwind_zones, district_downwind_risk
+from .fire_alerts import fire_alert_messages
+from .fire_risk import fire_score_by_district
 from .geography import load_districts
 from .ingestion import (
     fetch_open_meteo_air_forecast,
@@ -19,7 +23,9 @@ from .ingestion import (
 )
 from .interpolation import kriging_or_idw
 from .schemas import AirQualityForecast, AirReading, District, DistrictForecast, utc_now
+from .source_breakdown import attribute_pm25
 from .sources import load_source_status, registry_as_dict
+from .vn_aqi import vn_aqi_category, vn_aqi_combined
 from .weather import wind_components, wind_direction_text
 
 
@@ -49,9 +55,17 @@ def build_forecast(
     no2_bias = _district_bias(readings, background, districts, "no2")
     mode = _forecast_mode(readings, air_background_rows)
 
+    # Fire risk is presently empty in sample mode; the FIRMS aggregator
+    # will populate this list once live ingestion lands.
+    fire_risks: list = []
+    fire_score_map = fire_score_by_district(fire_risks)
+
     rows: list[DistrictForecast] = []
+    downwind_zones_by_hour: dict[int, list[dict]] = {}
     for hour_offset in range(settings.forecast_horizon_hours):
         weather = weather_hours[min(hour_offset, len(weather_hours) - 1)]
+        hour_zones = compute_downwind_zones(sources, districts, weather)
+        downwind_zones_by_hour[hour_offset] = hour_zones
         for district in districts:
             receptor_lat, receptor_lon = _receptor_for_district(district)
             plume = plume_contribution(
@@ -88,13 +102,33 @@ def build_forecast(
             else:
                 pm25_base = obs_pm25
                 no2_base = obs_no2
-            pm25 = pm25_base + traffic_pm25 + 0.46 * plume["pm25"]
+            plume_pm25_contrib = 0.46 * plume["pm25"]
+            pm25 = pm25_base + traffic_pm25 + plume_pm25_contrib
             no2 = no2_base + traffic_no2 + 0.34 * plume["no2"]
             pm25 = max(4.0, min(pm25, 220.0))
             no2 = max(5.0, min(no2, 900.0))
             aqi = combined_aqi(pm25=pm25, no2=no2)
+            vn_aqi_val = vn_aqi_combined(pm25=pm25, no2=no2)
+            fire_score_val = float(fire_score_map.get(district.district_id, 0.0))
+            breakdown = attribute_pm25(
+                pm25_total=pm25,
+                traffic_pm25=traffic_pm25,
+                plume_pm25=plume_pm25_contrib,
+                seasonal_factor=season,
+                fire_score=fire_score_val,
+            )
             uncertainty = _uncertainty_band(aqi, hour_offset, plume["pm25"])
             wind_u, wind_v = wind_components(weather.wind_speed_mps, weather.wind_dir_deg)
+            downwind_risk = district_downwind_risk(hour_zones, district.district_id)
+            action_input = {
+                "aqi": aqi,
+                "pm25": pm25,
+                "hour_offset": hour_offset,
+                "district_name": district.name,
+                "source_breakdown": breakdown,
+                "timestamp": timestamp.isoformat(),
+            }
+            actions_dict = recommendations(action_input, downwind_risk=downwind_risk)
             rows.append(
                 DistrictForecast(
                     district_id=district.district_id,
@@ -114,6 +148,11 @@ def build_forecast(
                     uncertainty_low=max(0, round(aqi - uncertainty)),
                     uncertainty_high=min(500, round(aqi + uncertainty)),
                     health_text=_health_text(district, weather.wind_dir_deg, aqi),
+                    vn_aqi=vn_aqi_val,
+                    vn_category=vn_aqi_category(vn_aqi_val),
+                    source_breakdown=breakdown,
+                    downwind_risk=downwind_risk,
+                    actions=actions_dict,
                 )
             )
 
@@ -123,6 +162,7 @@ def build_forecast(
         aqi_threshold=settings.alert_aqi_threshold,
         pm25_threshold=settings.alert_pm25_threshold,
     )
+    alerts.extend(fire_alert_messages(fire_risks))
     max_aqi = max(row["aqi"] for row in forecast_rows) if forecast_rows else 0
     return {
         "generated_at": now.isoformat(),
@@ -136,6 +176,7 @@ def build_forecast(
         "source_registry": registry_as_dict(),
         "source_status": load_source_status(settings),
         "input_quality": _quality_summary(readings, air_background_rows),
+        "downwind_zones": {str(hour): zones for hour, zones in downwind_zones_by_hour.items()},
     }
 
 
@@ -305,6 +346,9 @@ def _receptor_for_district(district: District) -> tuple[float, float]:
         "bac_tu_liem": (21.0950, 105.7778),
         "long_bien": (21.0445, 105.9140),
         "hai_ba_trung": (21.0005, 105.8755),
+        "hoai_duc": (21.0340, 105.7110),
+        "thach_that": (21.0840, 105.5760),
+        "son_tay": (21.1320, 105.5050),
     }
     return receptors.get(district.district_id, (district.lat, district.lon))
 
@@ -321,6 +365,9 @@ def _hotspot(district: District) -> str:
         "cau_giay": "Cầu Giấy - Xuân Thủy",
         "ha_dong": "Quang Trung - Lê Văn Lương",
         "nam_tu_liem": "Mỹ Đình - Lê Đức Thọ",
+        "hoai_duc": "QL32 - Trôi",
+        "thach_that": "Cụm xi măng - QL21",
+        "son_tay": "Đại lộ Thăng Long - thị xã Sơn Tây",
     }
     return hotspots.get(district.district_id, "khu vực thấp gió trong quận")
 

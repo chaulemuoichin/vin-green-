@@ -24,11 +24,13 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install runtime dependencies only
+# Install runtime dependencies only. `curl` is needed for the container
+# healthchecks declared in docker-compose / docker-compose.prod.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libopenblas0 \
     liblapack3 \
     libgomp1 \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user

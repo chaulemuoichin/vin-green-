@@ -12,7 +12,9 @@ from hanoi_air.config import get_settings
 from hanoi_air.forecast import build_cached_forecast, top_n_worst
 from hanoi_air.geography import load_districts
 from hanoi_air.observability import init_sentry
+from hanoi_air.validation import load_latest_backtest
 from hanoi_air.viz import aqi_color, build_folium_map
+from hanoi_air.vn_aqi import vn_aqi_category, vn_aqi_color
 
 init_sentry(service="dashboard")
 
@@ -285,6 +287,7 @@ with st.sidebar:
     hour = st.slider("Giờ dự báo", 0, 23, 0, format="T+%dh")
     selected_label = st.selectbox("Quận / huyện", list(district_options.keys()))
     selected_district = district_options[selected_label]
+    show_downwind = st.toggle("💨 Hiển thị vùng xuôi gió", value=True)
     st.divider()
     st.markdown(
         '<div style="color:#334155;font-size:.68rem;line-height:1.6">'
@@ -349,14 +352,19 @@ with map_col:
     tab_map, tab_table = st.tabs(["🗺️  Bản đồ", "📊  Bảng dữ liệu"])
 
     with tab_map:
-        map_obj = build_folium_map(bundle, hour_offset=hour, selected_district=selected_district)
+        map_obj = build_folium_map(
+            bundle, hour_offset=hour,
+            selected_district=selected_district,
+            show_downwind=show_downwind,
+        )
         if map_obj is None:
             st.error("Cần cài: `pip install folium streamlit-folium`")
         else:
             try:
                 from streamlit_folium import st_folium  # type: ignore
                 st_folium(map_obj, width=None, height=590,
-                          returned_objects=[], key=f"map_v3_{hour}_{selected_district}")
+                          returned_objects=[],
+                          key=f"map_v4_{hour}_{selected_district}_{int(show_downwind)}")
             except Exception:
                 st.components.v1.html(map_obj._repr_html_(), height=590)
 
@@ -528,3 +536,330 @@ try:
 
 except Exception as exc:
     st.warning(f"Không vẽ được chart: {exc}")
+
+# ── VN AQI + Source Attribution tabs ──────────────────────────────────────────
+st.markdown("<div style='margin-top:22px'></div>", unsafe_allow_html=True)
+tab_vn_aqi, tab_sources, tab_actions, tab_accuracy = st.tabs(
+    ["🇻🇳  VN_AQI (QCVN)", "🥧  Nguồn ô nhiễm", "✅  Hành động", "📐  Độ chính xác"]
+)
+
+with tab_vn_aqi:
+    st.markdown(
+        '<div style="color:#94a3b8;font-size:.72rem;text-transform:uppercase;'
+        'letter-spacing:.07em;margin-bottom:10px">'
+        'Chuẩn Việt Nam — QCVN 06:2022 / Quyết định 1459/QĐ-TCMT 2019'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+
+    vn_aqi_val = int(main_row.get("vn_aqi", 0))
+    vn_cat = main_row.get("vn_category") or vn_aqi_category(vn_aqi_val)
+    vn_clr = vn_aqi_color(vn_aqi_val)
+
+    hero_col, table_col = st.columns([1, 2])
+    with hero_col:
+        st.markdown(_aqi_hero_card(vn_aqi_val, vn_cat, vn_clr), unsafe_allow_html=True)
+        us_aqi_val = int(main_row["aqi"])
+        delta = vn_aqi_val - us_aqi_val
+        delta_color = "#ef4444" if delta > 0 else "#22c55e" if delta < 0 else "#64748b"
+        delta_sign = "+" if delta > 0 else ""
+        st.markdown(
+            f'<div style="background:rgba(255,255,255,0.03);'
+            f'border:1px solid rgba(255,255,255,0.07);border-radius:10px;'
+            f'padding:10px 14px;text-align:center;font-size:.78rem;color:#94a3b8">'
+            f'So với US-EPA: <b style="color:{delta_color}">{delta_sign}{delta}</b><br>'
+            f'<span style="color:#475569;font-size:.7rem">'
+            f'(US-EPA {us_aqi_val} · VN_AQI {vn_aqi_val})</span>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+
+    with table_col:
+        try:
+            import pandas as pd
+            comparison_rows = []
+            for r in hour_rows:
+                comparison_rows.append({
+                    "Quận": r["district_name"],
+                    "PM2.5 µg/m³": r["pm25"],
+                    "US-EPA AQI": r["aqi"],
+                    "US-EPA mức độ": r["category"],
+                    "VN_AQI": int(r.get("vn_aqi", 0)),
+                    "VN mức độ": r.get("vn_category", ""),
+                })
+            df_vn = pd.DataFrame(comparison_rows).sort_values("VN_AQI", ascending=False)
+            st.dataframe(df_vn, use_container_width=True, hide_index=True, height=420)
+        except Exception as exc:
+            st.warning(f"Không hiển thị bảng so sánh: {exc}")
+
+    st.markdown(
+        '<div style="color:#475569;font-size:.7rem;line-height:1.55;margin-top:8px">'
+        'VN_AQI dùng ngưỡng PM2.5 24h (0–25 Tốt · 25–50 Trung bình · 50–80 Kém · '
+        '80–150 Xấu · 150–250 Rất xấu · ≥250 Nguy hại). '
+        'US-EPA NowCast nghiêm khắc hơn ở dải PM2.5 thấp nên giá trị thường lớn hơn.'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+
+with tab_sources:
+    st.markdown(
+        '<div style="color:#94a3b8;font-size:.72rem;text-transform:uppercase;'
+        'letter-spacing:.07em;margin-bottom:10px">'
+        f'Phân bổ nguồn PM2.5 — {main_row["district_name"]} · T+{hour}h'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+
+    breakdown = main_row.get("source_breakdown") or {}
+    SOURCE_LABELS = {
+        "traffic": ("Giao thông", "#f97316"),
+        "industry": ("Công nghiệp", "#a78bfa"),
+        "agriculture": ("Nông nghiệp / đốt", "#84cc16"),
+        "fire": ("Cháy rừng", "#ef4444"),
+        "other": ("Khác / nền", "#64748b"),
+    }
+
+    try:
+        import pandas as pd
+        import plotly.graph_objects as go
+
+        pie_col, stack_col = st.columns([1, 1.4])
+        with pie_col:
+            labels = [SOURCE_LABELS[k][0] for k in SOURCE_LABELS if k in breakdown]
+            values = [float(breakdown.get(k, 0.0)) for k in SOURCE_LABELS if k in breakdown]
+            colors = [SOURCE_LABELS[k][1] for k in SOURCE_LABELS if k in breakdown]
+            if sum(values) > 0:
+                pie = go.Figure(go.Pie(
+                    labels=labels, values=values, hole=0.55,
+                    marker=dict(colors=colors, line=dict(color="#080d1a", width=2)),
+                    textinfo="label+percent", textfont=dict(color="#e2e8f0", size=11),
+                    hovertemplate="%{label}: <b>%{percent}</b><extra></extra>",
+                ))
+                pie.update_layout(
+                    paper_bgcolor="rgba(0,0,0,0)",
+                    plot_bgcolor="rgba(0,0,0,0)",
+                    font=dict(color="#94a3b8", family="Inter"),
+                    height=320,
+                    margin=dict(l=0, r=0, t=10, b=10),
+                    showlegend=False,
+                )
+                st.plotly_chart(pie, use_container_width=True, config={"displayModeBar": False})
+            else:
+                st.info("Chưa có phân bổ nguồn cho giờ này.")
+
+        with stack_col:
+            district_id_for_stack = main_row["district_id"]
+            series_rows = [
+                r for r in bundle["forecasts"]
+                if r["district_id"] == district_id_for_stack
+            ]
+            series_rows.sort(key=lambda r: int(r["hour_offset"]))
+            hours = [int(r["hour_offset"]) for r in series_rows]
+            stack = go.Figure()
+            for key, (label, color) in SOURCE_LABELS.items():
+                ys = [float((r.get("source_breakdown") or {}).get(key, 0.0)) * 100 for r in series_rows]
+                stack.add_trace(go.Bar(
+                    x=hours, y=ys, name=label,
+                    marker=dict(color=color, line=dict(width=0)),
+                    hovertemplate=f"{label}: <b>%{{y:.1f}}%</b><extra></extra>",
+                ))
+            stack.add_vline(x=hour, line_color="rgba(255,255,255,0.25)",
+                            line_dash="dash", line_width=1)
+            stack.update_layout(
+                barmode="stack",
+                paper_bgcolor="rgba(0,0,0,0)",
+                plot_bgcolor="rgba(255,255,255,0.02)",
+                font=dict(color="#94a3b8", family="Inter", size=11),
+                height=320,
+                margin=dict(l=0, r=0, t=10, b=0),
+                hovermode="x unified",
+                legend=dict(
+                    bgcolor="rgba(15,20,35,0.8)",
+                    bordercolor="rgba(255,255,255,0.08)",
+                    borderwidth=1, font=dict(size=10),
+                    orientation="h", y=-0.18, x=0,
+                ),
+                xaxis=dict(
+                    title="Giờ dự báo (T+h)",
+                    gridcolor="rgba(255,255,255,0.05)", zeroline=False,
+                    tickfont=dict(color="#475569"),
+                    title_font=dict(color="#64748b", size=10),
+                ),
+                yaxis=dict(
+                    title="% PM2.5", range=[0, 100],
+                    gridcolor="rgba(255,255,255,0.05)", zeroline=False,
+                    tickfont=dict(color="#475569"),
+                    title_font=dict(color="#64748b", size=10),
+                ),
+            )
+            st.plotly_chart(stack, use_container_width=True, config={"displayModeBar": False})
+
+        if breakdown:
+            top_key = max(breakdown, key=lambda k: breakdown.get(k, 0.0))
+            top_label, top_color = SOURCE_LABELS.get(top_key, (top_key, "#94a3b8"))
+            top_share = breakdown.get(top_key, 0.0)
+            st.markdown(
+                f'<div style="background:rgba(255,255,255,0.03);'
+                f'border:1px solid {top_color}33;border-radius:10px;'
+                f'padding:10px 14px;margin-top:6px;font-size:.78rem;color:#94a3b8">'
+                f'Nguồn chính: <b style="color:{top_color}">{top_label}</b> '
+                f'({top_share*100:.1f} %) — '
+                f'{"hành động: hạn chế xe cá nhân giờ cao điểm" if top_key=="traffic" else ""}'
+                f'{"hành động: kiểm tra nhà máy xuôi gió" if top_key=="industry" else ""}'
+                f'{"hành động: ngăn đốt rơm rạ" if top_key=="agriculture" else ""}'
+                f'{"hành động: theo dõi vệt khói khu vực" if top_key=="fire" else ""}'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+    except Exception as exc:
+        st.warning(f"Không vẽ được phân bổ nguồn: {exc}")
+
+with tab_actions:
+    st.markdown(
+        '<div style="color:#94a3b8;font-size:.72rem;text-transform:uppercase;'
+        'letter-spacing:.07em;margin-bottom:10px">'
+        f'Khuyến nghị cho {main_row["district_name"]} · T+{hour}h '
+        f'· AQI {int(main_row["aqi"])} ({main_row["category"]})'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+
+    actions = main_row.get("actions") or {}
+    citizen = actions.get("citizen", [])
+    gov = actions.get("government", [])
+
+    col_citizen, col_gov = st.columns(2)
+    with col_citizen:
+        st.markdown(
+            '<div style="color:#63b3ed;font-size:.82rem;font-weight:600;'
+            'margin-bottom:6px">👤 Cho người dân</div>',
+            unsafe_allow_html=True,
+        )
+        if not citizen:
+            st.markdown(
+                '<div style="color:#475569;font-size:.78rem;padding:10px 14px;'
+                'background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);'
+                'border-radius:10px">Không có khuyến nghị đặc biệt.</div>',
+                unsafe_allow_html=True,
+            )
+        for item in citizen:
+            st.markdown(
+                f'<div style="background:rgba(99,179,237,0.08);'
+                f'border:1px solid rgba(99,179,237,0.25);border-left:3px solid #63b3ed;'
+                f'border-radius:8px;padding:8px 12px;margin-bottom:6px;'
+                f'font-size:.82rem;color:#cbd5e1">{item}</div>',
+                unsafe_allow_html=True,
+            )
+
+    with col_gov:
+        st.markdown(
+            '<div style="color:#f59e0b;font-size:.82rem;font-weight:600;'
+            'margin-bottom:6px">🏛️ Cho chính quyền</div>',
+            unsafe_allow_html=True,
+        )
+        if not gov:
+            st.markdown(
+                '<div style="color:#475569;font-size:.78rem;padding:10px 14px;'
+                'background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);'
+                'border-radius:10px">Mức AQI hiện tại chưa cần can thiệp.</div>',
+                unsafe_allow_html=True,
+            )
+        for item in gov:
+            st.markdown(
+                f'<div style="background:rgba(245,158,11,0.08);'
+                f'border:1px solid rgba(245,158,11,0.25);border-left:3px solid #f59e0b;'
+                f'border-radius:8px;padding:8px 12px;margin-bottom:6px;'
+                f'font-size:.82rem;color:#cbd5e1">{item}</div>',
+                unsafe_allow_html=True,
+            )
+
+    # Fire-origin alerts (if any) get a distinct banner.
+    fire_alerts = [a for a in bundle.get("alerts", []) if a.get("pollutant") == "FIRE_PM25"]
+    if fire_alerts:
+        st.markdown(
+            '<div style="margin-top:14px;color:#fca5a5;font-size:.78rem;'
+            'font-weight:600">🔥 Cảnh báo cháy ngoại biên</div>',
+            unsafe_allow_html=True,
+        )
+        for fa in fire_alerts:
+            st.markdown(
+                f'<div style="background:rgba(239,68,68,0.08);'
+                f'border:1px solid rgba(239,68,68,0.3);border-left:3px solid #ef4444;'
+                f'border-radius:8px;padding:8px 12px;margin-top:6px;'
+                f'font-size:.82rem;color:#fca5a5">{fa["message"]}</div>',
+                unsafe_allow_html=True,
+            )
+
+with tab_accuracy:
+    st.markdown(
+        '<div style="color:#94a3b8;font-size:.72rem;text-transform:uppercase;'
+        'letter-spacing:.07em;margin-bottom:10px">'
+        'Backtest dự báo PM2.5 vs trạm quan trắc'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+
+    snapshot = load_latest_backtest(get_settings())
+    if snapshot is None:
+        st.info(
+            "Chưa có snapshot backtest. Chạy `python scripts/run_backtest.py --days 7` "
+            "sau khi có ít nhất một chu kỳ live ingestion."
+        )
+    elif snapshot.get("status") != "ok":
+        st.warning(
+            f"Backtest status: **{snapshot.get('status')}** — "
+            f"{snapshot.get('note', '')}"
+        )
+    else:
+        overall = snapshot["overall"]
+        fc = overall.get("forecast", {})
+        base = overall.get("persistence_baseline", {})
+        improvement = overall.get("rmse_improvement_vs_persistence")
+
+        m1, m2, m3, m4 = st.columns(4)
+        m1.markdown(
+            _metric_card("Forecast RMSE", str(fc.get("rmse", "—")), "µg/m³", "#63b3ed"),
+            unsafe_allow_html=True,
+        )
+        m2.markdown(
+            _metric_card("Forecast MAE", str(fc.get("mae", "—")), "µg/m³", "#a78bfa"),
+            unsafe_allow_html=True,
+        )
+        m3.markdown(
+            _metric_card("Forecast R²", str(fc.get("r2", "—")), "", "#22c55e"),
+            unsafe_allow_html=True,
+        )
+        improvement_value = f"{improvement:+}" if improvement is not None else "—"
+        improvement_color = (
+            "#22c55e" if (improvement or 0) > 0 else "#ef4444" if (improvement or 0) < 0 else "#64748b"
+        )
+        m4.markdown(
+            _metric_card("Tốt hơn persistence", improvement_value, "µg/m³ RMSE", improvement_color),
+            unsafe_allow_html=True,
+        )
+
+        st.markdown(
+            f'<div style="color:#475569;font-size:.72rem;margin-top:8px">'
+            f'Mẫu: {fc.get("n", 0)} cặp dự báo/đo · '
+            f'Persistence baseline RMSE {base.get("rmse", "—")} µg/m³ · '
+            f'Sinh lúc {snapshot.get("generated_at", "")[:16].replace("T", " ")}'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+
+        try:
+            import pandas as pd
+            df_acc = pd.DataFrame(snapshot.get("per_district", []))
+            if not df_acc.empty:
+                df_acc = df_acc.rename(columns={
+                    "district_id": "Quận",
+                    "actual_pm25": "Đo thực (µg/m³)",
+                    "forecast_pm25": "Dự báo (µg/m³)",
+                    "persistence_pm25": "Persistence (µg/m³)",
+                    "abs_error": "|Sai số dự báo|",
+                    "persistence_abs_error": "|Sai số persistence|",
+                }).sort_values("|Sai số dự báo|", ascending=False)
+                st.dataframe(df_acc, use_container_width=True, hide_index=True, height=380)
+        except Exception as exc:
+            st.warning(f"Không hiển thị bảng độ chính xác: {exc}")
+
