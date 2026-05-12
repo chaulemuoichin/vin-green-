@@ -24,6 +24,7 @@ class SourceConfig:
 
 SOURCE_REGISTRY: dict[str, SourceConfig] = {
     "open_meteo_weather": SourceConfig("open_meteo_weather", 10, 30, 12, 90, 0.88, "live_api"),
+    "firms_viirs": SourceConfig("firms_viirs", 15, 180, 15, 360, 0.90, "satellite_nrt"),
     "open_meteo_air": SourceConfig("open_meteo_air", 20, 30, 18, 120, 0.82, "forecast_background"),
     "aqicn": SourceConfig("aqicn", 30, 30, 12, 120, 0.92, "live_api"),
     "openaq": SourceConfig("openaq", 40, 60, 15, 180, 0.86, "live_api"),

@@ -19,15 +19,15 @@ _NORTHERN_VIETNAM_BOUNDS = {
 
 def aqi_color(aqi: int) -> str:
     if aqi <= 50:
-        return "#2ecc71"
+        return "#2fdd8a"
     if aqi <= 100:
-        return "#f1c40f"
+        return "#e2c044"
     if aqi <= 150:
-        return "#e67e22"
+        return "#f28c38"
     if aqi <= 200:
-        return "#e74c3c"
+        return "#ef5350"
     if aqi <= 300:
-        return "#8e44ad"
+        return "#b66cff"
     return "#7f1d1d"
 
 
@@ -146,16 +146,16 @@ class _PM25HeatmapLegend(MacroElement):
                 var legend = L.control({position: 'bottomright'});
                 legend.onAdd = function() {
                     var div = L.DomUtil.create('div', 'pm25-legend');
-                    div.style.background = 'rgba(15,20,35,0.88)';
-                    div.style.border = '1px solid rgba(255,255,255,0.15)';
-                    div.style.borderRadius = '10px';
+                    div.style.background = 'rgba(18,22,20,0.92)';
+                    div.style.border = '1px solid rgba(230,238,232,0.18)';
+                    div.style.borderRadius = '8px';
                     div.style.padding = '8px 14px 12px';
-                    div.style.color = '#e2e8f0';
-                    div.style.fontFamily = 'Inter, -apple-system, sans-serif';
+                    div.style.color = '#eef2f6';
+                    div.style.fontFamily = 'IBM Plex Sans, Segoe UI, sans-serif';
                     div.style.fontSize = '11px';
-                    div.style.boxShadow = '0 4px 20px rgba(0,0,0,0.4)';
+                    div.style.boxShadow = '0 4px 20px rgba(0,0,0,0.42)';
                     div.innerHTML = [
-                        '<div style="text-align:center;font-weight:600;margin-bottom:6px;letter-spacing:0.05em;color:#cbd5e1">PM2.5 [&mu;g/m&sup3;]</div>',
+                        '<div style="text-align:center;font-weight:700;margin-bottom:6px;letter-spacing:0.05em;color:#b6c2cf">PM2.5 heatmap [&mu;g/m&sup3;]</div>',
                         '<div style="position:relative;width:300px;height:30px">',
                           '<div style="position:absolute;top:0;left:0;right:0;height:13px;border-radius:3px;border:1px solid rgba(255,255,255,0.1);background:linear-gradient(to right,#000080 0%,#0040ff 12%,#00ffff 25%,#00ff00 38%,#ffff00 50%,#ff8000 63%,#ff2000 75%,#990000 88%,#4d0000 100%)"></div>',
                           '<span style="position:absolute;top:16px;left:0%;transform:translateX(-50%);color:#94a3b8;font-size:10px">40</span>',
@@ -278,6 +278,205 @@ class _VelocityWindLayer(MacroElement):
         )
 
 
+class _LayerControlSkin(MacroElement):
+    """Dark, compact styling for the Leaflet layer toggle panel."""
+
+    def __init__(self):
+        super().__init__()
+        self._template = Template(
+            u"""
+            {% macro header(this, kwargs) %}
+            <style>
+            .leaflet-control-layers {
+                background: rgba(18, 22, 20, 0.94) !important;
+                border: 1px solid rgba(230, 238, 232, 0.18) !important;
+                border-radius: 8px !important;
+                box-shadow: 0 14px 34px rgba(0, 0, 0, 0.42) !important;
+                color: #eef2f6 !important;
+                font-family: "IBM Plex Sans", "Segoe UI", sans-serif !important;
+                overflow: hidden;
+            }
+            .leaflet-control-layers-expanded {
+                padding: 0 !important;
+                min-width: 248px;
+                max-width: min(320px, calc(100vw - 42px));
+            }
+            .leaflet-control-layers-expanded::before {
+                content: "Map layers";
+                display: block;
+                padding: 9px 12px 8px;
+                background: rgba(255, 255, 255, 0.045);
+                border-bottom: 1px solid rgba(230, 238, 232, 0.12);
+                color: #b6c2cf;
+                font-size: 11px;
+                font-weight: 800;
+                letter-spacing: 0.08em;
+                text-transform: uppercase;
+            }
+            .leaflet-control-layers-list {
+                padding: 7px 8px 8px !important;
+                max-height: 278px;
+                overflow-y: auto;
+            }
+            .leaflet-control-layers label {
+                display: flex !important;
+                align-items: center;
+                gap: 8px;
+                margin: 0 !important;
+                padding: 6px 7px;
+                border-radius: 6px;
+                color: #d7dee6;
+                font-size: 13px;
+                line-height: 1.25;
+                cursor: pointer;
+                transition: background 120ms ease, color 120ms ease;
+            }
+            .leaflet-control-layers label:hover {
+                background: rgba(98, 214, 177, 0.10);
+                color: #ffffff;
+            }
+            .leaflet-control-layers-selector {
+                width: 14px;
+                height: 14px;
+                margin: 0 !important;
+                accent-color: #18a7a7;
+                flex: 0 0 auto;
+            }
+            .leaflet-control-layers-separator {
+                border-top: 1px solid rgba(230, 238, 232, 0.12) !important;
+                margin: 7px 0 !important;
+            }
+            .leaflet-control-layers-toggle {
+                width: 72px !important;
+                height: 34px !important;
+                background-color: rgba(18, 22, 20, 0.94) !important;
+                background-image: none !important;
+                border-radius: 8px !important;
+                border: 1px solid rgba(230, 238, 232, 0.18) !important;
+                box-shadow: 0 10px 24px rgba(0, 0, 0, 0.38) !important;
+                color: #c9f7e7 !important;
+                text-decoration: none !important;
+                display: flex !important;
+                align-items: center;
+                justify-content: center;
+            }
+            .leaflet-control-layers-toggle::after {
+                content: "Layers";
+                color: #c9f7e7;
+                font-size: 12px;
+                font-weight: 800;
+                letter-spacing: 0.04em;
+                text-transform: uppercase;
+            }
+            .leaflet-control-layers-list::-webkit-scrollbar { width: 8px; }
+            .leaflet-control-layers-list::-webkit-scrollbar-track {
+                background: rgba(255, 255, 255, 0.04);
+                border-radius: 99px;
+            }
+            .leaflet-control-layers-list::-webkit-scrollbar-thumb {
+                background: rgba(98, 214, 177, 0.35);
+                border-radius: 99px;
+            }
+            </style>
+            {% endmacro %}
+            {% macro script(this, kwargs) %}
+            (function() {
+                function skinLayerControl() {
+                    var controls = document.querySelectorAll('.leaflet-control-layers');
+                    controls.forEach(function(control) {
+                        control.style.background = 'rgba(18, 22, 20, 0.94)';
+                        control.style.border = '1px solid rgba(230, 238, 232, 0.18)';
+                        control.style.borderRadius = '8px';
+                        control.style.boxShadow = '0 14px 34px rgba(0, 0, 0, 0.42)';
+                        control.style.color = '#eef2f6';
+                        control.style.fontFamily = '"IBM Plex Sans", "Segoe UI", sans-serif';
+                        control.style.overflow = 'hidden';
+
+                        var toggle = control.querySelector('.leaflet-control-layers-toggle');
+                        if (toggle) {
+                            toggle.style.width = '72px';
+                            toggle.style.height = '34px';
+                            toggle.style.backgroundColor = 'rgba(18, 22, 20, 0.94)';
+                            toggle.style.backgroundImage = 'none';
+                            toggle.style.borderRadius = '8px';
+                            toggle.style.border = '1px solid rgba(230, 238, 232, 0.18)';
+                            toggle.style.boxShadow = '0 10px 24px rgba(0, 0, 0, 0.38)';
+                            toggle.style.color = '#c9f7e7';
+                            toggle.style.textDecoration = 'none';
+                            toggle.style.display = 'flex';
+                            toggle.style.alignItems = 'center';
+                            toggle.style.justifyContent = 'center';
+                            toggle.setAttribute('aria-label', 'Toggle map layers');
+                            toggle.setAttribute('title', 'Toggle map layers');
+                            if (!toggle.querySelector('.air-layer-toggle-text')) {
+                                var text = document.createElement('span');
+                                text.className = 'air-layer-toggle-text';
+                                text.textContent = 'Layers';
+                                text.style.color = '#c9f7e7';
+                                text.style.fontSize = '12px';
+                                text.style.fontWeight = '800';
+                                text.style.letterSpacing = '0.04em';
+                                text.style.textTransform = 'uppercase';
+                                toggle.appendChild(text);
+                            }
+                        }
+
+                        var list = control.querySelector('.leaflet-control-layers-list');
+                        if (list) {
+                            list.style.padding = '7px 8px 8px';
+                            list.style.maxHeight = '278px';
+                            list.style.overflowY = 'auto';
+                        }
+
+                        var expanded = control.classList.contains('leaflet-control-layers-expanded');
+                        if (expanded && !control.querySelector('.air-layer-control-title')) {
+                            var title = document.createElement('div');
+                            title.className = 'air-layer-control-title';
+                            title.textContent = 'Map layers';
+                            title.style.padding = '9px 12px 8px';
+                            title.style.background = 'rgba(255, 255, 255, 0.045)';
+                            title.style.borderBottom = '1px solid rgba(230, 238, 232, 0.12)';
+                            title.style.color = '#b6c2cf';
+                            title.style.fontSize = '11px';
+                            title.style.fontWeight = '800';
+                            title.style.letterSpacing = '0.08em';
+                            title.style.textTransform = 'uppercase';
+                            control.insertBefore(title, control.firstChild);
+                        }
+
+                        control.querySelectorAll('label').forEach(function(label) {
+                            label.style.display = 'flex';
+                            label.style.alignItems = 'center';
+                            label.style.gap = '8px';
+                            label.style.margin = '0';
+                            label.style.padding = '6px 7px';
+                            label.style.borderRadius = '6px';
+                            label.style.color = '#d7dee6';
+                            label.style.fontSize = '13px';
+                            label.style.lineHeight = '1.25';
+                        });
+                        control.querySelectorAll('input').forEach(function(input) {
+                            input.style.width = '14px';
+                            input.style.height = '14px';
+                            input.style.margin = '0';
+                            input.style.accentColor = '#18a7a7';
+                        });
+                    });
+                }
+                skinLayerControl();
+                setTimeout(skinLayerControl, 200);
+                setTimeout(skinLayerControl, 800);
+                document.addEventListener('click', function(event) {
+                    if (event.target.closest && event.target.closest('.leaflet-control-layers')) {
+                        setTimeout(skinLayerControl, 0);
+                    }
+                }, true);
+            })();
+            {% endmacro %}
+            """
+        )
+
+
 _PM25_HEATMAP_MIN = 40.0  # µg/m³ — bottom of the jet scale
 _PM25_HEATMAP_MAX = 80.0  # µg/m³ — top of the jet scale
 
@@ -366,9 +565,14 @@ def build_folium_map(bundle: dict, hour_offset: int = 0, selected_district: str 
         district_id = feature["properties"]["district_id"]
         row = row_by_id.get(district_id)
         color = aqi_color(int(row["aqi"])) if row else "#95a5a6"
-        weight = 3 if selected_district == district_id else 1
-        fill_opacity = 0.42 if selected_district == district_id else 0.22
-        return {"fillColor": color, "color": color, "weight": weight, "fillOpacity": fill_opacity}
+        selected = selected_district == district_id
+        return {
+            "fillColor": color,
+            "color": "#eef2f6" if selected else color,
+            "weight": 4 if selected else 1,
+            "fillOpacity": 0.5 if selected else 0.18,
+            "dashArray": None if selected else "3",
+        }
 
     district_layer = folium.FeatureGroup(name="Quận Hà Nội — màu AQI", show=False)
     folium.GeoJson(
@@ -450,14 +654,16 @@ def build_folium_map(bundle: dict, hour_offset: int = 0, selected_district: str 
         if not district:
             continue
         aqi = int(row["aqi"])
-        radius = 11 if selected_district == district.district_id else 7
+        selected = selected_district == district.district_id
+        radius = 12 if selected else 7
         folium.CircleMarker(
             location=[district.lat, district.lon],
             radius=radius,
-            color=aqi_color(aqi),
+            color="#eef2f6" if selected else aqi_color(aqi),
+            weight=3 if selected else 1,
             fill=True,
             fill_color=aqi_color(aqi),
-            fill_opacity=0.88,
+            fill_opacity=0.94 if selected else 0.84,
             popup=folium.Popup(
                 (
                     f"<b>{district.name}</b><br>"
@@ -545,5 +751,6 @@ def build_folium_map(bundle: dict, hour_offset: int = 0, selected_district: str 
     if velocity_data:
         _VelocityWindLayer(velocity_data).add_to(fmap)
 
-    folium.LayerControl(collapsed=False).add_to(fmap)
+    folium.LayerControl(collapsed=True).add_to(fmap)
+    _LayerControlSkin().add_to(fmap)
     return fmap

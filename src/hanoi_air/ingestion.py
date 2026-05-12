@@ -24,7 +24,15 @@ from .http import http_get_json as _http_json_impl
 from .http import http_get_text as _http_text_impl
 from .logging_setup import get_logger
 from .retry import guard_source
-from .schemas import AirQualityForecast, AirReading, District, SourceEmission, WeatherHour, utc_now
+from .schemas import (
+    AirQualityForecast,
+    AirReading,
+    District,
+    FireDetection,
+    SourceEmission,
+    WeatherHour,
+    utc_now,
+)
 from .sources import mark_source_status, should_fetch_source, source_config
 
 logger = get_logger(__name__)
@@ -176,6 +184,8 @@ def build_open_meteo_weather_url(lat: float, lon: float, horizon_hours: int = 24
                     "wind_speed_10m",
                     "wind_direction_10m",
                     "boundary_layer_height",
+                    "wind_speed_850hPa",
+                    "wind_direction_850hPa",
                 ]
             ),
             "forecast_hours": horizon_hours,
@@ -225,6 +235,8 @@ def parse_open_meteo_weather_payload(
     humidity = hourly.get("relative_humidity_2m") or []
     precipitation = hourly.get("precipitation") or []
     boundary = hourly.get("boundary_layer_height") or []
+    speed_850 = hourly.get("wind_speed_850hPa") or []
+    dir_850 = hourly.get("wind_direction_850hPa") or []
     rows: list[WeatherHour] = []
     for idx, value in enumerate(times[:horizon_hours]):
         try:
@@ -242,6 +254,12 @@ def parse_open_meteo_weather_payload(
                         float(boundary[idx])
                         if idx < len(boundary) and boundary[idx] is not None
                         else None
+                    ),
+                    wind_speed_850hpa_mps=(
+                        float(speed_850[idx]) if idx < len(speed_850) and speed_850[idx] is not None else 0.0
+                    ),
+                    wind_dir_850hpa_deg=(
+                        float(dir_850[idx]) if idx < len(dir_850) and dir_850[idx] is not None else 0.0
                     ),
                 )
             )
@@ -707,6 +725,136 @@ def fetch_cem_public_readings(settings: Settings | None = None) -> list[AirReadi
         logger.warning("CEM crawler failed: {exc}", exc=exc)
         mark_source_status("cem_crawler", False, 0, str(exc), settings)
         return []
+
+
+def parse_firms_viirs_csv(csv_text: str) -> list[FireDetection]:
+    """Parse FIRMS VIIRS NRT CSV response into FireDetection records.
+
+    Applies the filters from data_dictionary.md:
+    - confidence in ['n', 'h'] (nominal + high only; 'l' has too many false positives)
+    - frp > 0
+    - distance to Hanoi <= 600 km (realistic 72h transport range at 10+ km/h wind)
+    """
+    import csv as csv_module
+    import math
+    from io import StringIO
+
+    from geopy.distance import geodesic
+
+    from .fire_risk import fire_to_h3
+
+    HANOI = (21.03, 105.85)
+    MAX_DISTANCE_KM = 600.0
+
+    fires: list[FireDetection] = []
+    reader = csv_module.DictReader(StringIO(csv_text))
+
+    for row in reader:
+        confidence = (row.get("confidence") or "").strip().lower()
+        if confidence not in ("n", "h"):
+            continue
+
+        frp = _safe_float(row.get("frp"))
+        if frp is None or frp <= 0:
+            continue
+
+        lat = _safe_float(row.get("latitude"))
+        lon = _safe_float(row.get("longitude"))
+        if lat is None or lon is None:
+            continue
+
+        distance_km = geodesic((lat, lon), HANOI).km
+        if distance_km > MAX_DISTANCE_KM:
+            continue
+
+        acq_date = (row.get("acq_date") or "").strip()
+        acq_time = (row.get("acq_time") or "0000").strip().zfill(4)
+        try:
+            timestamp = datetime.strptime(
+                f"{acq_date} {acq_time[:2]}:{acq_time[2:]}", "%Y-%m-%d %H:%M"
+            ).replace(tzinfo=timezone.utc)
+        except ValueError:
+            timestamp = utc_now()
+
+        # Bearing from Hanoi to fire (degrees, 0=N clockwise)
+        lat1 = math.radians(HANOI[0])
+        lon1 = math.radians(HANOI[1])
+        lat2 = math.radians(lat)
+        dlon = math.radians(lon) - lon1
+        y = math.sin(dlon) * math.cos(lat2)
+        x = math.cos(lat1) * math.sin(lat2) - math.sin(lat1) * math.cos(lat2) * math.cos(dlon)
+        bearing = (math.degrees(math.atan2(y, x)) + 360) % 360
+
+        satellite = (row.get("satellite") or "unknown").strip()
+        fire_id = f"{satellite}_{lat:.3f}_{lon:.3f}_{acq_time}"
+
+        fires.append(
+            FireDetection(
+                fire_id=fire_id,
+                timestamp=timestamp,
+                lat=lat,
+                lon=lon,
+                frp=frp,
+                confidence=confidence,
+                satellite=satellite,
+                distance_to_hanoi_km=round(distance_km, 1),
+                bearing_from_hanoi_deg=round(bearing, 1),
+                h3_index=fire_to_h3(lat, lon),
+            )
+        )
+
+    return fires
+
+
+@guard_source("firms_viirs", fallback=[])
+def fetch_firms_fires(
+    settings: Settings | None = None,
+    now: datetime | None = None,
+) -> list[FireDetection]:
+    """Fetch FIRMS VIIRS NOAA-20 NRT fire detections for the last 3 days.
+
+    Bbox: 102.0,18.3,109.7,23.7 — covers fires within ~600 km of Hanoi
+    that can realistically arrive within 72 h given 10+ km/h 850 hPa wind.
+    """
+    from .cache import load_cache, save_cache
+
+    settings = settings or get_settings()
+    now = now or utc_now()
+    config = source_config("firms_viirs")
+
+    cached = load_cache("firms_fires", settings)
+    if not should_fetch_source("firms_viirs", settings) and cached:
+        logger.debug("firms_viirs: within cadence window, returning cached %d fires", len(cached))
+        return [FireDetection(**item) for item in cached]
+
+    bbox = "102.0,18.3,109.7,23.7"
+    url = (
+        f"https://firms.modaps.eosdis.nasa.gov/api/area/csv/"
+        f"{settings.firms_map_key}/VIIRS_NOAA20_NRT/{bbox}/3"
+    )
+
+    try:
+        csv_text = _http_text(url, timeout=float(config.timeout_seconds))
+        archive_raw_payload("firms_viirs", csv_text, "csv", settings)
+        fires = parse_firms_viirs_csv(csv_text)
+        if fires:
+            frp_values = [f.frp for f in fires]
+            logger.info(
+                "FIRMS: %d fires within 600 km, FRP %.1f-%.1f MW",
+                len(fires),
+                min(frp_values),
+                max(frp_values),
+            )
+        save_cache([f.to_dict() for f in fires], "firms_fires", settings, ttl_seconds=config.cadence_minutes * 60)
+        mark_source_status("firms_viirs", True, len(fires), settings=settings)
+        return fires
+    except Exception as exc:
+        logger.warning("firms_viirs fetch failed: {exc}", exc=exc)
+        mark_source_status("firms_viirs", False, 0, str(exc), settings)
+
+    if cached:
+        return [FireDetection(**item) for item in cached]
+    return []
 
 
 def load_air_readings(
@@ -1215,6 +1363,8 @@ def _weather_hour_from_dict(row: Mapping[str, object]) -> WeatherHour:
             if row.get("boundary_layer_height_m") is not None
             else None
         ),
+        wind_speed_850hpa_mps=float(row.get("wind_speed_850hpa_mps") or 0.0),
+        wind_dir_850hpa_deg=float(row.get("wind_dir_850hpa_deg") or 0.0),
     )
 
 

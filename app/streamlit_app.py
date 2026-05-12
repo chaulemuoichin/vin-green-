@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
+from textwrap import dedent
 
 ROOT = Path(__file__).resolve().parents[1]
+APP_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT / "src"))
+sys.path.insert(0, str(APP_DIR))
 
 import streamlit as st
 
@@ -12,519 +16,431 @@ from hanoi_air.config import get_settings
 from hanoi_air.forecast import build_cached_forecast, top_n_worst
 from hanoi_air.geography import load_districts
 from hanoi_air.observability import init_sentry
-from hanoi_air.viz import aqi_color, build_folium_map
+from hanoi_air.viz import build_folium_map
+from ui_components import (
+    alert_banner,
+    aqi_legend,
+    driver_breakdown,
+    map_header,
+    metric_card,
+    primary_aqi_summary,
+    recommendation_card,
+    section_label,
+    status_strip,
+    top5_row,
+)
+from ui_theme import ACCENTS, TEXT_COLORS, aqi_state, global_css
 
 init_sentry(service="dashboard")
 
 st.set_page_config(
     page_title="Northern Vietnam Air Forecast",
-    page_icon="🌫️",
+    page_icon="AQ",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
-# ── Global CSS ────────────────────────────────────────────────────────────────
-st.markdown("""
-<style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
-
-*, *::before, *::after { box-sizing: border-box; }
-
-html, body, .stApp {
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif !important;
-    background: #080d1a !important;
-    color: #e2e8f0 !important;
-}
-
-#MainMenu, footer { visibility: hidden; }
-.stDeployButton { display: none !important; }
-.block-container { padding: 1.2rem 1.8rem 2rem !important; max-width: 100% !important; }
-
-/* Sidebar */
-[data-testid="stSidebar"] {
-    background: linear-gradient(180deg, #0d1526 0%, #080d1a 100%) !important;
-    border-right: 1px solid rgba(255,255,255,0.06) !important;
-}
-[data-testid="stSidebar"] > div { padding-top: 1rem; }
-
-/* Sidebar labels */
-[data-testid="stSidebar"] label,
-[data-testid="stSidebar"] .stSlider label,
-[data-testid="stSidebar"] p {
-    color: #94a3b8 !important;
-    font-size: 0.78rem !important;
-    text-transform: uppercase;
-    letter-spacing: 0.07em;
-}
-[data-testid="stSidebar"] h1 {
-    color: #f1f5f9 !important;
-    font-size: 1.2rem !important;
-    font-weight: 700 !important;
-    letter-spacing: -0.02em;
-}
-
-/* Buttons */
-.stButton > button {
-    background: rgba(99,179,237,0.08) !important;
-    border: 1px solid rgba(99,179,237,0.25) !important;
-    color: #93c5fd !important;
-    border-radius: 9px !important;
-    font-size: 0.85rem !important;
-    font-weight: 500 !important;
-    transition: all 0.18s ease !important;
-    padding: 0.45rem 1rem !important;
-}
-.stButton > button:hover {
-    background: rgba(99,179,237,0.16) !important;
-    border-color: rgba(99,179,237,0.5) !important;
-    transform: translateY(-1px);
-    box-shadow: 0 4px 15px rgba(99,179,237,0.15) !important;
-}
-
-/* Toggle */
-[data-testid="stToggle"] { margin: 4px 0 !important; }
-
-/* Selectbox */
-[data-testid="stSelectbox"] > div > div {
-    background: rgba(255,255,255,0.04) !important;
-    border: 1px solid rgba(255,255,255,0.1) !important;
-    border-radius: 9px !important;
-    color: #e2e8f0 !important;
-}
-
-/* Slider */
-[data-testid="stSlider"] [data-baseweb="slider"] div[role="slider"] {
-    background: #63b3ed !important;
-    border-color: #63b3ed !important;
-}
-[data-testid="stSlider"] [data-baseweb="slider"] > div > div > div {
-    background: linear-gradient(90deg, #63b3ed, #a78bfa) !important;
-}
-
-/* Native metric containers */
-[data-testid="metric-container"] {
-    background: rgba(255,255,255,0.04) !important;
-    border: 1px solid rgba(255,255,255,0.08) !important;
-    border-radius: 12px !important;
-    padding: 14px 18px !important;
-    transition: border-color 0.2s;
-}
-[data-testid="metric-container"]:hover { border-color: rgba(99,179,237,0.25) !important; }
-[data-testid="stMetricLabel"] p {
-    color: #64748b !important;
-    font-size: 0.68rem !important;
-    text-transform: uppercase !important;
-    letter-spacing: 0.09em !important;
-}
-[data-testid="stMetricValue"] {
-    color: #f1f5f9 !important;
-    font-size: 1.55rem !important;
-    font-weight: 700 !important;
-}
-
-/* Tabs */
-[data-testid="stTabs"] [data-baseweb="tab-list"] {
-    background: rgba(255,255,255,0.04) !important;
-    border-radius: 10px !important;
-    padding: 3px !important;
-    gap: 2px !important;
-    border: 1px solid rgba(255,255,255,0.07) !important;
-}
-[data-testid="stTabs"] [data-baseweb="tab"] {
-    border-radius: 7px !important;
-    color: #64748b !important;
-    font-size: 0.82rem !important;
-    font-weight: 500 !important;
-    padding: 5px 18px !important;
-    background: transparent !important;
-}
-[data-testid="stTabs"] [aria-selected="true"] {
-    background: rgba(99,179,237,0.12) !important;
-    color: #93c5fd !important;
-}
-
-/* Dataframe */
-[data-testid="stDataFrame"] > div {
-    background: rgba(255,255,255,0.02) !important;
-    border: 1px solid rgba(255,255,255,0.07) !important;
-    border-radius: 10px !important;
-}
-
-/* Divider */
-hr { border-color: rgba(255,255,255,0.06) !important; margin: 10px 0 !important; }
-
-/* Map iframe */
-iframe {
-    border-radius: 14px !important;
-    border: 1px solid rgba(255,255,255,0.08) !important;
-}
-
-/* Alerts */
-[data-testid="stAlert"] {
-    background: rgba(239,68,68,0.08) !important;
-    border: 1px solid rgba(239,68,68,0.25) !important;
-    border-radius: 10px !important;
-}
-[data-testid="stAlert"] p { color: #fca5a5 !important; }
-
-/* Line chart */
-[data-testid="stArrowVegaLiteChart"] { border-radius: 12px !important; overflow: hidden; }
-
-/* Plotly chart bg */
-.js-plotly-plot { border-radius: 12px !important; }
-</style>
-""", unsafe_allow_html=True)
+st.markdown(global_css(), unsafe_allow_html=True)
 
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
-def _aqi_label_color(aqi: int) -> tuple[str, str]:
-    if aqi <= 50:   return "Tốt", "#22c55e"
-    if aqi <= 100:  return "Trung bình", "#eab308"
-    if aqi <= 150:  return "Không tốt", "#f97316"
-    if aqi <= 200:  return "Xấu", "#ef4444"
-    if aqi <= 300:  return "Rất xấu", "#a855f7"
-    return "Nguy hiểm", "#7f1d1d"
+def _html(value: str) -> str:
+    return " ".join(line.strip() for line in dedent(value).strip().splitlines())
 
 
-def _metric_card(label: str, value: str, unit: str = "", accent: str = "#63b3ed") -> str:
-    return f"""
-    <div style="
-        background:rgba(255,255,255,0.04);
-        border:1px solid rgba(255,255,255,0.08);
-        border-radius:12px;
-        padding:14px 18px;
-        text-align:center;
-        transition:border-color .2s;
-    ">
-        <div style="color:#64748b;font-size:.68rem;text-transform:uppercase;letter-spacing:.09em;margin-bottom:5px">{label}</div>
-        <div style="color:{accent};font-size:1.55rem;font-weight:700;line-height:1.1">{value}</div>
-        {f'<div style="color:#475569;font-size:.72rem;margin-top:3px">{unit}</div>' if unit else ''}
-    </div>"""
-
-
-def _aqi_hero_card(aqi: int, category: str, color: str) -> str:
-    return f"""
-    <div style="
-        background:linear-gradient(135deg,{color}20,{color}08);
-        border:1px solid {color}40;
-        border-radius:16px;
-        padding:22px 20px 18px;
-        text-align:center;
-        box-shadow:0 0 35px {color}18;
-        margin-bottom:14px;
-    ">
-        <div style="color:#64748b;font-size:.65rem;text-transform:uppercase;letter-spacing:.12em;margin-bottom:8px">Chỉ số AQI</div>
-        <div style="font-size:3.2rem;font-weight:800;color:{color};line-height:1;
-                    text-shadow:0 0 25px {color}66;letter-spacing:-0.02em">{aqi}</div>
-        <div style="display:inline-block;background:{color}22;border:1px solid {color}44;
-                    border-radius:20px;padding:3px 14px;font-size:.82rem;color:{color};
-                    font-weight:600;margin-top:10px">{category}</div>
-    </div>"""
-
-
-def _source_badge(mode: str) -> str:
-    cfg = {
-        "live":                ("🟢", "LIVE",       "#22c55e"),
-        "free_api_background": ("🟡", "BACKGROUND", "#eab308"),
-        "sample":              ("⚪", "SAMPLE",      "#64748b"),
-    }.get(mode, ("⚪", mode.upper(), "#64748b"))
-    icon, label, color = cfg
-    return f"""
-    <span style="display:inline-flex;align-items:center;gap:5px;
-        background:{color}15;border:1px solid {color}35;
-        border-radius:20px;padding:3px 11px;
-        font-size:.72rem;font-weight:600;color:{color};letter-spacing:.05em">
-        {icon} {label}
-    </span>"""
-
-
-def _top5_row(rank: int, name: str, aqi: int, color: str) -> str:
-    bar = min(100, int(aqi / 3))
-    return f"""
-    <div style="margin-bottom:10px">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
-            <span style="color:#94a3b8;font-size:.8rem">
-                <span style="color:{color};font-weight:700;margin-right:6px">#{rank}</span>{name}
-            </span>
-            <span style="color:{color};font-weight:700;font-size:.85rem">{aqi}</span>
-        </div>
-        <div style="height:4px;background:rgba(255,255,255,0.06);border-radius:2px">
-            <div style="height:100%;width:{bar}%;background:{color};border-radius:2px;
-                        box-shadow:0 0 6px {color}66"></div>
-        </div>
-    </div>"""
-
-
-# ── Data ─────────────────────────────────────────────────────────────────────
 @st.cache_data(ttl=1800, show_spinner=False)
 def _load_bundle(use_live: bool, force: bool) -> dict:
     return build_cached_forecast(get_settings(), force_refresh=force, use_live=use_live)
 
 
-districts = load_districts()
-district_options = {"Toàn Hà Nội": None}
-district_options.update({d.name: d.district_id for d in districts})
+def _freshness_note(bundle: dict) -> str:
+    status = bundle.get("source_status") or {}
+    successes = [
+        item
+        for item in status.values()
+        if isinstance(item, dict) and item.get("ok") and item.get("last_success_at")
+    ]
+    if not successes:
+        return "No live freshness record"
+    latest = max(str(item["last_success_at"]) for item in successes)
+    try:
+        parsed = datetime.fromisoformat(latest)
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        minutes = max(0, round((datetime.now(timezone.utc) - parsed.astimezone(timezone.utc)).total_seconds() / 60))
+        return f"freshest source {minutes} min ago"
+    except ValueError:
+        return f"freshest source {latest[:16].replace('T', ' ')}"
 
-# ── Sidebar ───────────────────────────────────────────────────────────────────
-with st.sidebar:
-    st.markdown("""
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">
-        <div style="width:32px;height:32px;background:linear-gradient(135deg,#3b82f6,#a78bfa);
-                    border-radius:8px;display:flex;align-items:center;justify-content:center;
-                    font-size:16px">🌫️</div>
-        <div>
-            <div style="color:#f1f5f9;font-size:1.05rem;font-weight:700;letter-spacing:-0.01em">Hanoi Air</div>
-            <div style="color:#475569;font-size:.68rem;margin-top:-1px">Forecast Dashboard</div>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-    st.divider()
-    use_live = st.toggle("🔴 Live data", value=True)
-    force_refresh = st.button("↺  Refresh ngay", use_container_width=True)
-    st.divider()
-    hour = st.slider("Giờ dự báo", 0, 23, 0, format="T+%dh")
-    selected_label = st.selectbox("Quận / huyện", list(district_options.keys()))
-    selected_district = district_options[selected_label]
-    st.divider()
-    st.markdown(
-        '<div style="color:#334155;font-size:.68rem;line-height:1.6">'
-        'Nguồn dữ liệu<br>'
-        '<span style="color:#475569">AQICN · OpenAQ · Open-Meteo</span>'
-        '</div>',
-        unsafe_allow_html=True,
-    )
 
-# ── Load bundle ───────────────────────────────────────────────────────────────
-with st.spinner(""):
-    bundle = _load_bundle(use_live, force_refresh)
+def _select_main_row(rows: list[dict], selected_district: str | None) -> dict | None:
+    if not rows:
+        return None
+    selected_rows = [
+        row for row in rows if selected_district is None or row["district_id"] == selected_district
+    ]
+    return max(selected_rows or rows, key=lambda row: int(row["aqi"]))
 
-hour_rows = [r for r in bundle["forecasts"] if int(r["hour_offset"]) == hour]
-selected_rows = [r for r in hour_rows if selected_district is None or r["district_id"] == selected_district]
-main_row = max(selected_rows or hour_rows, key=lambda r: int(r["aqi"]))
-aqi_val = int(main_row["aqi"])
-_, aqi_clr = _aqi_label_color(aqi_val)
 
-# ── Page title row ────────────────────────────────────────────────────────────
-title_col, badge_col = st.columns([5, 1])
-with title_col:
-    st.markdown(
-        f'<h1 style="margin:0;font-size:1.45rem;font-weight:700;color:#f1f5f9;letter-spacing:-0.02em">'
-        f'Miền Bắc Việt Nam — Dự báo chất lượng không khí 24h</h1>'
-        f'<div style="color:#475569;font-size:.78rem;margin-top:3px">Hà Nội (12 quận) + các tỉnh lân cận · Cập nhật mỗi 30 phút · {bundle.get("generated_at","")[:16].replace("T"," ")} UTC</div>',
-        unsafe_allow_html=True,
-    )
-with badge_col:
-    st.markdown(
-        f'<div style="text-align:right;padding-top:6px">{_source_badge(bundle["mode"])}</div>',
-        unsafe_allow_html=True,
-    )
-
-st.markdown("<div style='margin-bottom:10px'></div>", unsafe_allow_html=True)
-
-# ── KPI cards row ─────────────────────────────────────────────────────────────
-k1, k2, k3, k4, k5 = st.columns(5)
-k1.markdown(_metric_card("Max AQI hôm nay", str(bundle["max_aqi"]), accent=aqi_clr), unsafe_allow_html=True)
-k2.markdown(_metric_card("PM2.5 điểm nóng", f"{main_row['pm25']}", "µg/m³", "#f97316"), unsafe_allow_html=True)
-k3.markdown(_metric_card("NO₂ điểm nóng", f"{main_row['no2']}", "µg/m³", "#a78bfa"), unsafe_allow_html=True)
-k4.markdown(_metric_card("Cảnh báo", str(len(bundle["alerts"])), "quận vượt ngưỡng", "#ef4444" if bundle["alerts"] else "#22c55e"), unsafe_allow_html=True)
-k5.markdown(_metric_card("Đang xem", f"T+{hour}h", f"{selected_label}", "#63b3ed"), unsafe_allow_html=True)
-
-st.markdown("<div style='margin-bottom:6px'></div>", unsafe_allow_html=True)
-
-# ── Alert banner ──────────────────────────────────────────────────────────────
-if bundle["alerts"]:
-    alert_msgs = " · ".join(a["message"][:60] for a in bundle["alerts"][:3])
-    st.markdown(
-        f'<div style="background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.25);'
-        f'border-radius:10px;padding:9px 16px;font-size:.8rem;color:#fca5a5;margin-bottom:8px">'
-        f'⚠️ &nbsp;<b>{len(bundle["alerts"])} cảnh báo</b> — {alert_msgs}{"..." if len(bundle["alerts"])>3 else ""}'
-        f'</div>',
-        unsafe_allow_html=True,
-    )
-
-# ── Main layout ───────────────────────────────────────────────────────────────
-map_col, info_col = st.columns([2.5, 1.0])
-
-with map_col:
-    tab_map, tab_table = st.tabs(["🗺️  Bản đồ", "📊  Bảng dữ liệu"])
-
-    with tab_map:
-        map_obj = build_folium_map(bundle, hour_offset=hour, selected_district=selected_district)
-        if map_obj is None:
-            st.error("Cần cài: `pip install folium streamlit-folium`")
-        else:
-            try:
-                from streamlit_folium import st_folium  # type: ignore
-                st_folium(map_obj, width=None, height=590,
-                          returned_objects=[], key=f"map_v3_{hour}_{selected_district}")
-            except Exception:
-                st.components.v1.html(map_obj._repr_html_(), height=590)
-
-        # Map legend
-        st.markdown("""
-        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:8px;padding:8px 12px;
-                    background:rgba(255,255,255,0.03);border-radius:8px;border:1px solid rgba(255,255,255,0.06)">
-            <span style="font-size:.7rem;color:#475569;margin-right:4px">AQI:</span>
-            <span style="font-size:.7rem;color:#22c55e">● Tốt ≤50</span>
-            <span style="font-size:.7rem;color:#eab308">● TB ≤100</span>
-            <span style="font-size:.7rem;color:#f97316">● Không tốt ≤150</span>
-            <span style="font-size:.7rem;color:#ef4444">● Xấu ≤200</span>
-            <span style="font-size:.7rem;color:#a855f7">● Rất xấu ≤300</span>
-        </div>""", unsafe_allow_html=True)
-
-    with tab_table:
-        try:
-            import pandas as pd
-            df = pd.DataFrame(hour_rows)[[
-                "district_name", "aqi", "pm25", "no2", "category",
-                "wind_speed_mps", "uncertainty_low", "uncertainty_high",
-            ]].sort_values("aqi", ascending=False).rename(columns={
-                "district_name": "Quận", "aqi": "AQI", "pm25": "PM2.5 µg/m³",
-                "no2": "NO2 µg/m³", "category": "Mức độ",
-                "wind_speed_mps": "Gió m/s",
-                "uncertainty_low": "AQI min", "uncertainty_high": "AQI max",
-            })
-            st.dataframe(df, use_container_width=True, hide_index=True, height=560)
-        except Exception:
-            st.json(hour_rows[:12])
-
-with info_col:
-    # AQI hero
-    cat, clr = _aqi_label_color(aqi_val)
-    label = selected_label if selected_label != "Toàn Hà Nội" else main_row["district_name"]
-    st.markdown(f'<div style="color:#94a3b8;font-size:.72rem;margin-bottom:6px;'
-                f'text-transform:uppercase;letter-spacing:.07em">📍 {label}</div>',
-                unsafe_allow_html=True)
-    st.markdown(_aqi_hero_card(aqi_val, cat, clr), unsafe_allow_html=True)
-
-    # Detail metrics
-    d1, d2 = st.columns(2)
-    d1.markdown(_metric_card("PM2.5", str(main_row["pm25"]), "µg/m³", "#f97316"), unsafe_allow_html=True)
-    d2.markdown(_metric_card("NO₂", str(main_row["no2"]), "µg/m³", "#a78bfa"), unsafe_allow_html=True)
-    st.markdown("<div style='margin:6px 0'></div>", unsafe_allow_html=True)
-    d3, d4 = st.columns(2)
-    d3.markdown(_metric_card("Gió", f"{main_row['wind_speed_mps']}", "m/s", "#63b3ed"), unsafe_allow_html=True)
-    d4.markdown(_metric_card("Plume", f"{main_row['plume_pm25']}", "µg/m³", "#94a3b8"), unsafe_allow_html=True)
-
-    st.markdown(
-        f'<div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);'
-        f'border-radius:10px;padding:10px 12px;font-size:.75rem;color:#64748b;'
-        f'line-height:1.55;margin-top:8px">{main_row["health_text"]}</div>',
-        unsafe_allow_html=True,
-    )
-
-    st.markdown("<div style='margin:12px 0 6px'></div>", unsafe_allow_html=True)
-    st.markdown(
-        '<div style="color:#94a3b8;font-size:.72rem;text-transform:uppercase;'
-        'letter-spacing:.07em;margin-bottom:8px">🏆 Top 5 ô nhiễm nhất</div>',
-        unsafe_allow_html=True,
-    )
-    top5_html = ""
-    for i, row in enumerate(top_n_worst(bundle, 5), 1):
-        _, c = _aqi_label_color(int(row["aqi"]))
-        top5_html += _top5_row(i, row["district_name"], int(row["aqi"]), c)
-    st.markdown(
-        f'<div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);'
-        f'border-radius:12px;padding:14px 16px">{top5_html}</div>',
-        unsafe_allow_html=True,
-    )
-
-# ── 24h Forecast chart ────────────────────────────────────────────────────────
-st.markdown("<div style='margin-top:18px'></div>", unsafe_allow_html=True)
-st.markdown(
-    '<div style="color:#94a3b8;font-size:.72rem;text-transform:uppercase;'
-    'letter-spacing:.07em;margin-bottom:8px">📈 Diễn biến 24 giờ</div>',
-    unsafe_allow_html=True,
-)
-
-try:
-    import pandas as pd
-    import plotly.graph_objects as go
+def _chart(bundle: dict, selected_district: str | None, selected_label: str, main_row: dict, hour: int) -> None:
+    try:
+        import pandas as pd
+        import plotly.graph_objects as go
+    except Exception as exc:
+        st.warning(f"Chart dependencies unavailable: {exc}")
+        return
 
     if selected_district:
         series = [r for r in bundle["forecasts"] if r["district_id"] == selected_district]
         title_str = selected_label
     else:
         series = [r for r in bundle["forecasts"] if r["district_id"] == main_row["district_id"]]
-        title_str = main_row["district_name"] + " (điểm nóng nhất)"
+        title_str = f"{main_row['district_name']} - current hotspot"
+    if not series:
+        st.info("No forecast series available for the selected district.")
+        return
 
     df_chart = pd.DataFrame(series).sort_values("hour_offset")
-
     fig = go.Figure()
 
-    # AQI zone bands
-    for y0, y1, color in [(0,50,"#22c55e"),(50,100,"#eab308"),(100,150,"#f97316"),(150,200,"#ef4444"),(200,300,"#a855f7")]:
-        fig.add_hrect(y0=y0, y1=y1, fillcolor=color, opacity=0.04, line_width=0)
+    for y0, y1, label in [
+        (0, 50, "Tot"),
+        (50, 100, "Trung binh"),
+        (100, 150, "Khong tot"),
+        (150, 200, "Xau"),
+        (200, 300, "Rat xau"),
+    ]:
+        color = str(aqi_state(y1)["color"])
+        fig.add_hrect(y0=y0, y1=y1, fillcolor=color, opacity=0.045, line_width=0)
+        fig.add_hline(y=y1, line_color="rgba(255,255,255,0.08)", line_width=1)
+        if y1 in {100, 150, 200}:
+            fig.add_annotation(
+                x=23,
+                y=y1,
+                text=label,
+                showarrow=False,
+                font=dict(size=10, color="#8794a3"),
+                xanchor="right",
+                yshift=8,
+            )
 
-    # Uncertainty band
-    fig.add_trace(go.Scatter(
-        x=list(df_chart["hour_offset"]) + list(df_chart["hour_offset"])[::-1],
-        y=list(df_chart["uncertainty_high"]) + list(df_chart["uncertainty_low"])[::-1],
-        fill="toself", fillcolor="rgba(99,179,237,0.07)",
-        line=dict(width=0), showlegend=False, hoverinfo="skip",
-    ))
+    fig.add_trace(
+        go.Scatter(
+            x=list(df_chart["hour_offset"]) + list(df_chart["hour_offset"])[::-1],
+            y=list(df_chart["uncertainty_high"]) + list(df_chart["uncertainty_low"])[::-1],
+            fill="toself",
+            fillcolor="rgba(158,197,255,0.095)",
+            line=dict(width=0),
+            name="Uncertainty",
+            hoverinfo="skip",
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=df_chart["hour_offset"],
+            y=df_chart["aqi"],
+            name="AQI",
+            mode="lines+markers",
+            line=dict(color=str(aqi_state(int(main_row["aqi"]))["color"]), width=2.8),
+            marker=dict(size=5),
+            hovertemplate="T+%{x}h | AQI <b>%{y}</b><extra></extra>",
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=df_chart["hour_offset"],
+            y=df_chart["pm25"],
+            name="PM2.5 ug/m3",
+            mode="lines",
+            line=dict(color=ACCENTS["pm25"], width=1.9, dash="dot"),
+            yaxis="y2",
+            hovertemplate="PM2.5 <b>%{y:.1f}</b> ug/m3<extra></extra>",
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=df_chart["hour_offset"],
+            y=df_chart["no2"],
+            name="NO2 ug/m3",
+            mode="lines",
+            line=dict(color=ACCENTS["no2"], width=1.9, dash="dot"),
+            yaxis="y2",
+            hovertemplate="NO2 <b>%{y:.1f}</b> ug/m3<extra></extra>",
+        )
+    )
 
-    # AQI line
-    fig.add_trace(go.Scatter(
-        x=df_chart["hour_offset"], y=df_chart["aqi"],
-        name="AQI", mode="lines+markers",
-        line=dict(color="#ef4444", width=2.5),
-        marker=dict(size=5, color="#ef4444"),
-        hovertemplate="T+%{x}h — AQI: <b>%{y}</b><extra></extra>",
-    ))
-
-    # PM2.5 line
-    fig.add_trace(go.Scatter(
-        x=df_chart["hour_offset"], y=df_chart["pm25"],
-        name="PM2.5 µg/m³", mode="lines",
-        line=dict(color="#f97316", width=1.8, dash="dot"),
-        yaxis="y2",
-        hovertemplate="PM2.5: <b>%{y:.1f}</b> µg/m³<extra></extra>",
-    ))
-
-    # NO2 line
-    fig.add_trace(go.Scatter(
-        x=df_chart["hour_offset"], y=df_chart["no2"],
-        name="NO₂ µg/m³", mode="lines",
-        line=dict(color="#a78bfa", width=1.8, dash="dot"),
-        yaxis="y2",
-        hovertemplate="NO₂: <b>%{y:.1f}</b> µg/m³<extra></extra>",
-    ))
-
-    # Current hour marker
-    fig.add_vline(x=hour, line_color="rgba(255,255,255,0.2)", line_dash="dash", line_width=1)
+    fig.add_vline(x=hour, line_color="rgba(238,242,246,0.42)", line_dash="dash", line_width=1)
+    fig.add_annotation(
+        x=hour,
+        y=max(10, int(main_row["aqi"])),
+        text=f"T+{hour}h",
+        showarrow=True,
+        arrowhead=2,
+        arrowcolor="rgba(238,242,246,0.55)",
+        font=dict(size=11, color="#eef2f6"),
+        bgcolor="rgba(7,9,7,0.75)",
+        bordercolor="rgba(230,238,232,0.16)",
+    )
 
     fig.update_layout(
+        title=dict(text=title_str, font=dict(size=14, color=TEXT_COLORS["primary"])),
         paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(255,255,255,0.02)",
-        font=dict(color="#94a3b8", family="Inter", size=11),
-        height=280,
-        margin=dict(l=0, r=0, t=10, b=0),
+        plot_bgcolor="rgba(255,255,255,0.022)",
+        font=dict(color=TEXT_COLORS["secondary"], family="IBM Plex Sans", size=11),
+        height=300,
+        margin=dict(l=0, r=0, t=36, b=0),
         hovermode="x unified",
         legend=dict(
-            bgcolor="rgba(15,20,35,0.8)", bordercolor="rgba(255,255,255,0.08)",
-            borderwidth=1, font=dict(size=11), x=0.01, y=0.99,
+            bgcolor="rgba(18,22,20,0.86)",
+            bordercolor="rgba(230,238,232,0.105)",
+            borderwidth=1,
+            font=dict(size=11),
+            x=0.01,
+            y=0.98,
         ),
         xaxis=dict(
-            title="Giờ dự báo (T+h)",
-            gridcolor="rgba(255,255,255,0.05)", zeroline=False,
-            tickfont=dict(color="#475569"),
-            title_font=dict(color="#64748b", size=10),
+            title="Forecast hour (T+h)",
+            gridcolor="rgba(255,255,255,0.055)",
+            zeroline=False,
+            tickfont=dict(color=TEXT_COLORS["muted"]),
+            title_font=dict(color=TEXT_COLORS["muted"], size=10),
         ),
         yaxis=dict(
             title="AQI",
-            gridcolor="rgba(255,255,255,0.05)", zeroline=False,
-            tickfont=dict(color="#475569"),
-            title_font=dict(color="#64748b", size=10),
+            gridcolor="rgba(255,255,255,0.055)",
+            zeroline=False,
+            tickfont=dict(color=TEXT_COLORS["muted"]),
+            title_font=dict(color=TEXT_COLORS["muted"], size=10),
         ),
         yaxis2=dict(
-            title="µg/m³", overlaying="y", side="right",
-            gridcolor="rgba(0,0,0,0)", zeroline=False,
-            tickfont=dict(color="#475569"),
-            title_font=dict(color="#64748b", size=10),
+            title="ug/m3",
+            overlaying="y",
+            side="right",
+            gridcolor="rgba(0,0,0,0)",
+            zeroline=False,
+            tickfont=dict(color=TEXT_COLORS["muted"]),
+            title_font=dict(color=TEXT_COLORS["muted"], size=10),
         ),
     )
     st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
-except Exception as exc:
-    st.warning(f"Không vẽ được chart: {exc}")
+
+districts = load_districts()
+district_options = {"Toan Ha Noi": None}
+district_options.update({district.name: district.district_id for district in districts})
+
+with st.sidebar:
+    st.markdown(
+        """
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:2px">
+            <div style="width:32px;height:32px;background:#62d6b1;border-radius:7px;
+                display:flex;align-items:center;justify-content:center;color:#07100c;
+                font-weight:800;font-family:'IBM Plex Mono',monospace">AQ</div>
+            <div>
+                <div style="color:#eef2f6;font-size:1.04rem;font-weight:700">Hanoi Air</div>
+                <div style="color:#8794a3;font-size:.72rem">Operations console</div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    st.divider()
+    use_live = st.toggle("Live data", value=True)
+    force_refresh = st.button("Refresh now", use_container_width=True)
+    st.divider()
+    hour = st.slider("Forecast hour", 0, 23, 0, format="T+%dh")
+    selected_label = st.selectbox("District", list(district_options.keys()))
+    selected_district = district_options[selected_label]
+    st.divider()
+    st.markdown(
+        '<div style="color:#8794a3;font-size:.76rem;line-height:1.6">'
+        '<b style="color:#b6c2cf">Tracked sources</b><br>'
+        'AQICN / OpenAQ / Open-Meteo / public crawlers'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+
+with st.spinner("Loading forecast bundle..."):
+    bundle = _load_bundle(use_live, force_refresh)
+
+forecasts = bundle.get("forecasts") or []
+if not forecasts:
+    st.error("No forecast rows were returned. Check data sources or sample files.")
+    st.stop()
+
+hour_rows = [row for row in forecasts if int(row["hour_offset"]) == hour]
+if not hour_rows:
+    hour_rows = forecasts[: len(districts)]
+
+main_row = _select_main_row(hour_rows, selected_district)
+if main_row is None:
+    st.error("No forecast rows are available for the selected view.")
+    st.stop()
+
+aqi_val = int(main_row["aqi"])
+aqi_colour = str(aqi_state(aqi_val)["color"])
+source_note = _freshness_note(bundle)
+
+title_col, status_col = st.columns([1.55, 1])
+with title_col:
+    st.markdown(
+        '<h1 class="air-title">Northern Vietnam Air Quality Forecast</h1>'
+        '<div class="air-subtitle">Hanoi districts, regional context, wind and PM2.5 transport risk</div>',
+        unsafe_allow_html=True,
+    )
+with status_col:
+    st.markdown(
+        status_strip(
+            str(bundle.get("generated_at") or ""),
+            str(bundle.get("mode") or "unknown"),
+            len(bundle.get("source_registry") or bundle.get("sources") or []),
+            source_note,
+        ),
+        unsafe_allow_html=True,
+    )
+
+st.markdown("<div style='margin-bottom:10px'></div>", unsafe_allow_html=True)
+st.markdown(alert_banner(bundle.get("alerts") or [], main_row), unsafe_allow_html=True)
+
+_fire_alerts = bundle.get("fire_alerts") or []
+_fire_stats = bundle.get("fire_filter_stats") or {}
+if _fire_alerts:
+    st.warning(
+        f"**Cháy rừng upwind**: {len(_fire_alerts)} điểm cháy có rủi ro cao, "
+        f"khói dự kiến ảnh hưởng Hà Nội trong 24h tới."
+    )
+    for _fa in _fire_alerts[:3]:
+        st.markdown(f"- {_fa['message']}")
+    if _fire_stats.get("total_fires", 0) > 0:
+        with st.expander("Thống kê lọc fire (hex grid)"):
+            _fc1, _fc2, _fc3 = st.columns(3)
+            _fc1.metric("Tổng fires", _fire_stats.get("total_fires", 0))
+            _fc2.metric("High risk", _fire_stats.get("high_risk_count", 0))
+            _fc3.metric(
+                "Đã lọc bỏ",
+                _fire_stats.get("low_risk_count", 0),
+                delta=f"-{_fire_stats.get('compute_saved_minutes', 0):.0f} min HYSPLIT",
+            )
+
+summary_col, metric_col = st.columns([1.65, 2.15])
+with summary_col:
+    st.markdown(primary_aqi_summary(main_row, selected_label), unsafe_allow_html=True)
+with metric_col:
+    m1, m2, m3, m4 = st.columns(4)
+    m1.markdown(metric_card("Max AQI", str(bundle.get("max_aqi", aqi_val)), "bundle", aqi_colour), unsafe_allow_html=True)
+    m2.markdown(metric_card("Alerts", str(len(bundle.get("alerts") or [])), "districts", ACCENTS["danger"] if bundle.get("alerts") else "#2fdd8a"), unsafe_allow_html=True)
+    m3.markdown(metric_card("Viewing", f"T+{hour}h", selected_label, ACCENTS["wind"]), unsafe_allow_html=True)
+    m4.markdown(metric_card("Mode", str(bundle.get("mode") or "unknown").replace("_", " ").title(), "data", TEXT_COLORS["secondary"]), unsafe_allow_html=True)
+
+st.markdown("<div style='margin-bottom:10px'></div>", unsafe_allow_html=True)
+
+map_col, readout_col = st.columns([2.45, 1.0])
+
+with map_col:
+    tab_map, tab_table = st.tabs(["Map", "Data table"])
+    with tab_map:
+        st.markdown(
+            map_header(
+                hour,
+                selected_label,
+                bool(bundle.get("wind_grid")),
+                bool(bundle.get("regional_cities")),
+            ),
+            unsafe_allow_html=True,
+        )
+        map_obj = build_folium_map(bundle, hour_offset=hour, selected_district=selected_district)
+        if map_obj is None:
+            st.error("Install map dependencies: `pip install folium streamlit-folium`")
+        else:
+            try:
+                from streamlit_folium import st_folium  # type: ignore
+
+                st_folium(
+                    map_obj,
+                    width=None,
+                    height=590,
+                    returned_objects=[],
+                    key=f"map_ops_v3_{hour}_{selected_district}",
+                )
+            except Exception:
+                st.components.v1.html(map_obj._repr_html_(), height=590)
+        st.markdown(aqi_legend(), unsafe_allow_html=True)
+
+    with tab_table:
+        try:
+            import pandas as pd
+
+            df = (
+                pd.DataFrame(hour_rows)[
+                    [
+                        "district_name",
+                        "aqi",
+                        "pm25",
+                        "no2",
+                        "category",
+                        "wind_speed_mps",
+                        "uncertainty_low",
+                        "uncertainty_high",
+                    ]
+                ]
+                .sort_values("aqi", ascending=False)
+                .rename(
+                    columns={
+                        "district_name": "District",
+                        "aqi": "AQI",
+                        "pm25": "PM2.5 ug/m3",
+                        "no2": "NO2 ug/m3",
+                        "category": "Severity",
+                        "wind_speed_mps": "Wind m/s",
+                        "uncertainty_low": "AQI min",
+                        "uncertainty_high": "AQI max",
+                    }
+                )
+            )
+            st.dataframe(df, use_container_width=True, hide_index=True, height=560)
+        except Exception:
+            st.json(hour_rows[:12])
+
+with readout_col:
+    district_label = selected_label if selected_label != "Toan Ha Noi" else str(main_row["district_name"])
+    st.markdown(section_label("District readout"), unsafe_allow_html=True)
+    st.markdown(
+        _html(f"""
+        <div style="border:1px solid {aqi_colour}55;background:{aqi_colour}12;border-radius:8px;
+            padding:14px 15px;margin-bottom:9px">
+            <div style="color:{TEXT_COLORS['secondary']};font-size:.75rem;text-transform:uppercase;
+                letter-spacing:.07em;font-weight:700">{district_label}</div>
+            <div style="display:flex;align-items:baseline;gap:10px;margin-top:5px">
+                <span style="font-family:'IBM Plex Mono',monospace;font-size:3rem;font-weight:700;
+                    color:{aqi_colour};line-height:1">{aqi_val}</span>
+                <span style="color:{aqi_colour};font-size:.95rem;font-weight:700">{aqi_state(aqi_val)['label']}</span>
+            </div>
+            <div style="color:{TEXT_COLORS['secondary']};font-size:.82rem;margin-top:8px">
+                Uncertainty range {main_row['uncertainty_low']}-{main_row['uncertainty_high']} AQI
+            </div>
+        </div>
+        """),
+        unsafe_allow_html=True,
+    )
+    p1, p2 = st.columns(2)
+    p1.markdown(metric_card("PM2.5", str(main_row["pm25"]), "ug/m3", ACCENTS["pm25"]), unsafe_allow_html=True)
+    p2.markdown(metric_card("NO2", str(main_row["no2"]), "ug/m3", ACCENTS["no2"]), unsafe_allow_html=True)
+    p3, p4 = st.columns(2)
+    p3.markdown(metric_card("Wind", str(main_row["wind_speed_mps"]), "m/s", ACCENTS["wind"]), unsafe_allow_html=True)
+    p4.markdown(metric_card("Plume", str(main_row["plume_pm25"]), "ug/m3", ACCENTS["plume"]), unsafe_allow_html=True)
+    st.markdown(driver_breakdown(main_row), unsafe_allow_html=True)
+    st.markdown(recommendation_card(str(main_row.get("health_text") or "")), unsafe_allow_html=True)
+    st.markdown("<div style='margin:13px 0 2px'></div>", unsafe_allow_html=True)
+    st.markdown(section_label("Top 5 risk districts"), unsafe_allow_html=True)
+    top5_html = "".join(
+        top5_row(idx, str(row["district_name"]), int(row["aqi"]))
+        for idx, row in enumerate(top_n_worst(bundle, 5), 1)
+    )
+    st.markdown(
+        f'<div style="background:rgba(255,255,255,.035);border:1px solid rgba(230,238,232,.105);'
+        f'border-radius:8px;padding:13px 14px">{top5_html}</div>',
+        unsafe_allow_html=True,
+    )
+
+st.markdown("<div style='margin-top:17px'></div>", unsafe_allow_html=True)
+st.markdown(section_label("24-hour trajectory"), unsafe_allow_html=True)
+_chart(bundle, selected_district, selected_label, main_row, hour)

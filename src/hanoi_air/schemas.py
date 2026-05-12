@@ -57,6 +57,8 @@ class WeatherHour:
     humidity: float
     precipitation_mm: float = 0.0
     boundary_layer_height_m: float | None = None
+    wind_speed_850hpa_mps: float = 0.0
+    wind_dir_850hpa_deg: float = 0.0
 
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)
@@ -135,6 +137,48 @@ class Alert:
     threshold: float
     severity: str
     message: str
+
+    def to_dict(self) -> dict[str, Any]:
+        data = asdict(self)
+        data["timestamp"] = isoformat(self.timestamp)
+        return data
+
+
+@dataclass(frozen=True)
+class FireDetection:
+    """FIRMS VIIRS/MODIS fire hotspot with hex grid index and risk score."""
+
+    fire_id: str
+    timestamp: datetime
+    lat: float
+    lon: float
+    frp: float
+    confidence: str
+    satellite: str
+    distance_to_hanoi_km: float
+    bearing_from_hanoi_deg: float
+    h3_index: str = ""
+    risk_score: float = 0.0
+
+    def to_dict(self) -> dict[str, Any]:
+        data = asdict(self)
+        data["timestamp"] = isoformat(self.timestamp)
+        return data
+
+
+@dataclass(frozen=True)
+class FireHistoryRecord:
+    """Historical fire event used for hit rate calculation."""
+
+    fire_id: str
+    h3_index: str
+    timestamp: datetime
+    frp: float
+    wind_850_speed_mps: float
+    wind_850_dir_deg: float
+    humidity: float
+    hanoi_aqi_24h_later: float
+    caused_pollution: bool
 
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)

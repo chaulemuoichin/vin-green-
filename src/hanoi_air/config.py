@@ -48,6 +48,7 @@ class Settings(BaseSettings):
     source_status_file: Path = Field(
         default=PROJECT_ROOT / ".cache" / "source_status.json", exclude=True
     )
+    cache_dir: Path = Field(default=PROJECT_ROOT / ".cache", exclude=True)
 
     # ── External API credentials (hidden from repr to avoid log leakage) ───
     aqicn_token: str | None = Field(default=None, repr=False)
@@ -59,6 +60,18 @@ class Settings(BaseSettings):
     cems_api_url: str | None = None
     alert_webhook_url: str | None = Field(default=None, repr=False)
     redis_url: str | None = None
+
+    # ── Fire & Satellite (Phase 5 — upwind smoke detection) ──────────────
+    firms_map_key: str = Field(
+        default="574c47a834cae0aead0af0ab21e2ba6b",
+        repr=False,
+        description="NASA FIRMS API key"
+    )
+    gee_project_id: str = Field(
+        default="these-streets",
+        description="Google Earth Engine project ID"
+    )
+    cams_api_key: str | None = Field(default=None, repr=False, description="CAMS/Copernicus API key (optional)")
 
     # ── API security ──────────────────────────────────────────────────────
     api_keys: str | None = Field(default=None, repr=False, description="Comma-separated API keys")
@@ -91,6 +104,8 @@ class Settings(BaseSettings):
         "cems_api_url",
         "alert_webhook_url",
         "redis_url",
+        "firms_map_key",
+        "cams_api_key",
         mode="before",
     )
     @classmethod

@@ -23,3 +23,5 @@ pydantic-settings>=2.0
 sentry-sdk[fastapi,celery]>=2.0
 slowapi>=0.1.9
 prometheus-fastapi-instrumentator>=6.0
+h3>=3.7.6
+geopy>=2.4.0

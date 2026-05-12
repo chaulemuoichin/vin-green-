@@ -5,12 +5,14 @@ from collections.abc import Iterable
 from datetime import datetime, timedelta, timezone
 
 from .air_quality import aqi_category, combined_aqi, health_recommendation
-from .alerts import generate_alerts
+from .alerts import generate_alerts, generate_fire_alerts
 from .cache import load_cache, save_cache
 from .config import Settings, get_settings
 from .dispersion import plume_contribution
+from .fire_risk import filter_fires_by_risk
 from .geography import load_districts
 from .ingestion import (
+    fetch_firms_fires,
     fetch_open_meteo_air_forecast,
     fetch_regional_cities_aqi,
     fetch_regional_wind_grid,
@@ -20,7 +22,7 @@ from .ingestion import (
     load_weather_forecast,
 )
 from .interpolation import kriging_or_idw
-from .schemas import AirQualityForecast, AirReading, District, DistrictForecast, utc_now
+from .schemas import AirQualityForecast, AirReading, Alert, District, DistrictForecast, utc_now
 from .sources import load_source_status, registry_as_dict
 from .weather import wind_components, wind_direction_text
 
@@ -45,6 +47,21 @@ def build_forecast(
     traffic = load_traffic(settings)
     wind_grid = fetch_regional_wind_grid(settings, now) if live_enabled else []
     regional_cities = fetch_regional_cities_aqi(settings, now) if live_enabled else []
+
+    fires_raw = fetch_firms_fires(settings, now) if live_enabled else []
+    high_risk_fires, low_risk_fires = ([], [])
+    fire_alerts_list: list[Alert] = []
+    if fires_raw and weather_hours:
+        high_risk_fires, low_risk_fires = filter_fires_by_risk(
+            fires_raw, weather_hours[0], settings=settings
+        )
+        wind_850_kmh = weather_hours[0].wind_speed_850hpa_mps * 3.6
+        fire_alerts_list = generate_fire_alerts(
+            high_risk_fires,
+            low_risk_fires,
+            wind_850_kmh,
+            weather_hours[0].wind_dir_850hpa_deg,
+        )
 
     pm25_current = _interpolated_current(readings, districts, "pm25", default=38.0)
     no2_current = _interpolated_current(readings, districts, "no2", default=70.0)
@@ -142,6 +159,14 @@ def build_forecast(
         "source_registry": registry_as_dict(),
         "source_status": load_source_status(settings),
         "input_quality": _quality_summary(readings, air_background_rows),
+        "fire_alerts": [a.to_dict() for a in fire_alerts_list],
+        "fires_high_risk": [f.to_dict() for f in high_risk_fires],
+        "fire_filter_stats": {
+            "total_fires": len(fires_raw),
+            "high_risk_count": len(high_risk_fires),
+            "low_risk_count": len(low_risk_fires),
+            "compute_saved_minutes": round(len(low_risk_fires) * 3 * 45 / 60, 1),
+        },
     }
 
 
