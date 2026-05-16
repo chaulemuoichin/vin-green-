@@ -3,112 +3,172 @@
 ## System Overview
 
 ```
-Browser (:5173)
-    │
-    │  React app
-    │  polls every 5s
-    │
-    ▼
-Vite dev server  ──/api proxy──►  FastAPI (:8000)
-                                      │
-                                  simulator.py
-                               (generates fake data)
+┌─────────────────────────────────────────────────────────┐
+│  Browser  (localhost:5173)                               │
+│                                                          │
+│  React 18 app                                            │
+│  ├─ useAQI hook    polls every 5 s  ─────────────────┐  │
+│  ├─ useAlerts hook polls every 10 s ──────────────┐  │  │
+│  └─ UI renders from hook state                    │  │  │
+└───────────────────────────────────────────────────┼──┼──┘
+                                                    │  │
+          Vite dev server proxies /api/*  ◄──────────┘  │
+                        │                               │
+                        ▼                               │
+┌─────────────────────────────────────────────────────┐  │
+│  FastAPI  (localhost:8000)                           │  │
+│                                                      │  │
+│  GET /api/sensor/current  →  simulator.current_pm25()│  │
+│  GET /api/sensor/history  →  simulator.history(30)   │◄─┘
+│  GET /api/alerts          →  in-memory _store        │
+│  POST /api/alerts/dismiss →  mutates _store          │
+└─────────────────────────────────────────────────────┘
 ```
 
-No database. No real sensors. All data is generated in-memory by `simulator.py` on each request.
+**No database. No real sensors.** All readings come from `simulator.py` at request time.
 
 ---
 
-## Data Flow
+## Data Flow — Step by Step
 
 ```
-1. useAQI hook        → GET /api/sensor/current   (every 5 s)
-2. useAQI hook        → GET /api/sensor/history   (on mount)
-3. useAlerts hook     → GET /api/alerts            (every 10 s)
+1.  App mounts
+    └─ useAQI calls GET /api/sensor/history → populates 30-min chart
+    └─ useAlerts calls GET /api/alerts → shows alert log
 
-4. Dashboard.jsx reads pm25, risk, idling from useAQI
-5. Sets document.body[data-risk] → CSS variables update background glow
-6. Passes pm25+risk down to child components
+2.  Every 5 seconds
+    └─ useAQI calls GET /api/sensor/current
+       └─ returns { pm25, risk, idling_count, timestamp }
+       └─ Dashboard.jsx updates pm25, risk, idling state
 
-7. When risk = "high":
-   - AlertBanner renders (sticky)
-   - Alert log auto-scrolls + first alert expands
-   - Soft chime plays (if user enabled it)
-   - IdlingTicker card pulses with red border
-   - Background glow deepens (CSS transition 2.5s)
+3.  Dashboard.jsx side-effects on risk change
+    └─ document.body.dataset.risk = risk
+       └─ CSS variables update → background glow transitions over 2.5s
+    └─ if risk === 'high' && alerts.length > 0:
+       └─ setExpandedAlert(alerts[0].id)
+       └─ alertLogRef.current.scrollIntoView()
+    └─ if risk === 'high' && soundEnabled && prevRisk !== 'high':
+       └─ AudioContext plays 520 Hz chime for 0.18s
+
+4.  Props flow down
+    └─ Dashboard → ParentView: pm25, risk, alerts, history
+    └─ Dashboard → IdlingTicker: idling, risk
+    └─ Dashboard → TrendChart: history (last 30 data points)
 ```
 
 ---
 
-## Frontend Components
+## Frontend Component Tree
 
 ```
-App.jsx
-└── Router
-    ├── Landing.jsx          Splash screen
-    ├── Login.jsx            Login form
-    └── Dashboard.jsx        Main shell
-        │
-        ├── Header
-        │   ├── PersonaToggle  "Phụ huynh" / "Nhà trường"
-        │   ├── Clock          Live HH:MM:SS
-        │   ├── SoundButton    Toggle chime on CAO
-        │   └── AlertBanner    Sticky banner (school view, risk=high only)
-        │
-        ├── [persona=school, tab=dashboard]
-        │   ├── AQIGauge        Semicircle gauge, green→yellow→red
-        │   ├── MapPin          Leaflet map, sensor marker
-        │   ├── ActionChecklist Risk-gated action items (only at high)
-        │   ├── IdlingTicker    Live count + CO₂ estimate + pulse at high
-        │   ├── TrendChart      30-min actual + 30-min Gaussian forecast
-        │   └── Alert log       Grouped alerts, expandable rows
-        │
-        ├── [persona=school, tab=analytics]
-        │   └── Analytics.jsx   Bar charts, alert history table
-        │
-        └── [persona=parent]
-            └── ParentView.jsx
-                ├── Status card    Risk status + PM2.5 + Hanoi % comparison
-                ├── Pickup card    Best pickup time + 3-hour PM forecast bars
-                ├── Tips card      Health recommendations
-                ├── Pattern chart  Typical daily PM2.5 (static shape)
-                └── Active alerts  Pulsing alert dots
+App.jsx  (React Router)
+│
+├── /              Landing.jsx       Splash / entry
+├── /login         Login.jsx         School login form
+└── /dashboard     Dashboard.jsx     Main shell
+    │
+    ├── Header (inline in Dashboard.jsx)
+    │   ├── SchoolShield logo
+    │   ├── PersonaToggle              "Nhà trường" | "Phụ huynh"
+    │   ├── Live dot + "Đang theo dõi"
+    │   ├── Clock                      HH:MM:SS, updates every 1s
+    │   ├── SoundButton                🔔/🔕 chime toggle
+    │   ├── Mobile link                → /mobile
+    │   └── AlertBanner                sticky (school view + risk=high only)
+    │
+    ├── [persona = "school"]
+    │   ├── Tab: "Bảng điều khiển"
+    │   │   ├── AQIGauge               Semicircle, green→yellow→red
+    │   │   ├── MapPin                 Leaflet map, school-gate marker
+    │   │   ├── ActionChecklist        Only renders at risk=high
+    │   │   ├── IdlingTicker           Count + CO₂ + pulse border at high
+    │   │   ├── Stat (PM2.5)           Current reading
+    │   │   ├── Stat (active alerts)   Count
+    │   │   ├── Stat (exposure mins)   Minutes above 35 µg/m³ today
+    │   │   ├── TrendChart             30-min actual + 30-min forecast
+    │   │   └── Alert log              groupedAlerts, expandable rows
+    │   │
+    │   └── Tab: "Phân tích"
+    │       └── Analytics.jsx          Historical bar charts, alert table
+    │
+    ├── [persona = "parent"]
+    │   └── ParentView.jsx
+    │       ├── Status card            THẤP/CẦN LƯU Ý/NGUY HIỂM
+    │       │                          PM2.5 value
+    │       │                          "Cao hơn X% so với TB Hà Nội"
+    │       │                          Share to Zalo button
+    │       ├── Pickup card            Best pickup time
+    │       │                          3-hour PM forecast bars (+1h/+2h/+3h)
+    │       ├── Tips card              Risk-level health recommendations
+    │       ├── Pattern chart          Typical daily PM2.5 shape (static)
+    │       └── Active alerts          Pulsing dots, Vietnamese message
+    │
+    └── /mobile    MobileView.jsx      Mobile-optimised layout
 ```
 
 ---
 
 ## Risk System
 
-Risk is computed server-side in `simulator.py`:
+Risk is computed **server-side** in `backend/simulator.py:risk_level()`.
 
-| Level | Condition | CSS variable set |
-|---|---|---|
-| `low` | PM2.5 < 35 | default green glow |
-| `medium` | 35 ≤ PM2.5 < 75 | yellow glow (`rgba(251,191,36,...)`) |
-| `high` | PM2.5 ≥ 75 | red glow (`rgba(248,113,113,...)`), center spot |
+| `risk` value | Condition | Background CSS | Other effects |
+|---|---|---|---|
+| `"low"` | PM2.5 < 35 | Green radial glow | — |
+| `"medium"` | 35 ≤ PM2.5 < 75 | Yellow radial glow | — |
+| `"high"` | PM2.5 ≥ 75 | Deep red glow, 3 radial spots | Alert banner, chime, idling pulse, auto-scroll |
 
-The background uses CSS custom properties (`--risk-glow-a/b/c`) and a 2.5-second CSS transition, so the color shifts feel smooth.
+The background is driven by three CSS custom properties (`--risk-glow-a/b/c`) set on `body[data-risk]`. The 2.5-second `transition` on `body` makes risk changes feel smooth rather than jarring.
 
 ---
 
 ## Simulator Model
 
 ```python
-PM2.5(h) = 30 + 105·exp(-½·((h-7.5)/0.5)²)   # morning peak (07:30)
-               + 95·exp(-½·((h-16.0)/0.5)²)   # afternoon peak (16:00)
-               + gauss(0, 5)                   # noise
+# backend/simulator.py
+
+def _base_pm25(hour: float) -> float:
+    morning   = 105 * exp(-0.5 * ((hour - 7.5)  / 0.5) ** 2)
+    afternoon =  95 * exp(-0.5 * ((hour - 16.0) / 0.5) ** 2)
+    return 30.0 + morning + afternoon
+
+def current_pm25() -> float:
+    hour = datetime.now().hour + datetime.now().minute / 60
+    return max(8.0, round(_base_pm25(hour) + gauss(0, 5), 1))
 ```
 
-The same formula is duplicated in `frontend/src/components/TrendChart.jsx` (as `basePm25`) to generate the 30-minute forecast overlay without a backend call, and in `frontend/src/pages/ParentView.jsx` for the 3-hour pickup prediction bars.
+The identical formula is **duplicated** in two frontend files:
+- `TrendChart.jsx` — generates the 30-minute forecast overlay without an extra API call
+- `ParentView.jsx` — computes the +1h/+2h/+3h pickup prediction bars
+
+This is intentional for a hackathon prototype. Don't extract it to a shared module unless you're doing a proper refactor.
 
 ---
 
-## Adding Real Sensors
+## Alert Grouping
 
-To swap the simulator for real hardware:
+`groupAlerts()` in `Dashboard.jsx` runs before render:
 
-1. Replace `simulator.current_pm25()` in `routers/sensor.py` with a serial/MQTT read
-2. Store readings in a real DB (SQLite → Postgres) and update `history()` to query it
-3. Generate alerts automatically by watching PM2.5 thresholds instead of the static seed in `routers/alerts.py`
+```
+Input:  raw alerts array (unsorted, from API)
+Step 1: sort ascending by created_at
+Step 2: iterate — if current alert has same level as previous group
+        AND is within 10 minutes of the group's last alert:
+          increment count, update endTime, rewrite message
+        else: start a new group
+Output: grouped array (ascending) — rendered in reverse order (newest first)
+```
 
-The frontend needs no changes — it only consumes the API contract.
+Grouped alert message format: `"${count} lần ${levelLabel} liên tục — ${startTime} đến ${endTime}"`
+
+---
+
+## Replacing the Simulator with Real Hardware
+
+The frontend only consumes the API contract. To connect real sensors:
+
+1. **Replace `simulator.current_pm25()`** in `routers/sensor.py` with a serial/MQTT/HTTP read from the actual sensor
+2. **Add a database** (SQLite is enough for a single school gate). Store each reading with its timestamp and replace `simulator.history()` with a DB query for the last 30 minutes
+3. **Auto-generate alerts** — add a background task in `main.py` that watches incoming readings and writes to the alerts table when thresholds are crossed, instead of the static seed in `routers/alerts.py`
+
+Frontend changes needed: none.
