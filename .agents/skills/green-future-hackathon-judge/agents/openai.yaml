@@ -1,0 +1,4 @@
+interface:
+  display_name: "Green Future Hackathon Judge"
+  short_description: "Ruthless hackathon proposal judge"
+  default_prompt: "Use $green-future-hackathon-judge to critique our Asian Hackathon for Green Future 2026 proposal like the toughest judge in the room."

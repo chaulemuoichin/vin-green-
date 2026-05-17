@@ -1,0 +1,12 @@
+
+> schoolshield-frontend@0.1.0 dev
+> vite
+
+
+  VITE v5.4.21  ready in 566 ms
+
+  ➜  Local:   http://localhost:5173/
+  ➜  Network: use --host to expose
+5:22:38 pm [vite] hmr update /src/pages/MobileView.jsx, /src/index.css
+5:22:43 pm [vite] page reload src/main.jsx
+6:24:38 pm [vite] hmr update /src/pages/MobileView.jsx, /src/index.css
